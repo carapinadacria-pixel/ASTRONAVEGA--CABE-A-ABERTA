@@ -10,7 +10,7 @@ import { SpaceScene } from './SpaceScene';
 import { useGameStore, PLANETS } from '../store';
 import { Joystick } from './Joystick';
 import { MobileActionControls } from './MobileActionControls';
-import { initAudio, updateAudio, toggleAudio } from '../audio';
+import { initAudio, updateAudio, toggleAudio, playRefuelPumpSound, setAudioEnvironment } from '../audio';
 import { initGameDatabase, saveGameStateToDB, loadGameStateFromDB, getDatabaseStatus } from '../utils/gameDatabase';
 import {
   Crosshair,
@@ -33,9 +33,13 @@ import {
   RefreshCw,
   AlertTriangle,
   Monitor,
+  BookOpen,
+  Fuel,
+  Scale,
+  Wind,
 } from 'lucide-react';
 import { InventoryModal } from './InventoryModal';
-import { ComputerBookLibraryModal, ComputerProximityPrompt } from './ComputerBookLibraryModal';
+import { ComputerBookLibraryModal } from './ComputerBookLibraryModal';
 
 const keyboardMap = [
   { name: 'forward', keys: ['ArrowUp', 'KeyW'] },
@@ -455,7 +459,7 @@ function createDummyRenderer(canvas: HTMLCanvasElement): any {
               });
             }
           }}
-          camera={{ fov: 65, near: 0.2, far: scene === 'surface' ? 3500 : 45000 }}
+          camera={{ fov: 65, near: 0.2, far: scene === 'surface' ? 3500 : 180000 }}
         >
           <color attach="background" args={[bgSkyColor]} />
           <Suspense fallback={null}>
@@ -552,7 +556,7 @@ const HUDHeader = memo(function HUDHeader() {
 const SpaceFlightHUD = memo(function SpaceFlightHUD() {
   const scene = useGameStore((state) => state.scene);
   const spaceFlightData = useGameStore((state) => state.spaceFlightData);
-  const { speed, target, distKm, stagingProgress } = spaceFlightData;
+  const { speed, target, distKm, stagingProgress, solarHeatPct, isEvaporating } = spaceFlightData;
 
   if (scene !== 'space') return null;
 
@@ -561,6 +565,31 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
 
   return (
     <div className="absolute top-4 inset-x-0 mx-auto max-w-xl px-3 sm:px-4 pointer-events-none z-30 flex flex-col items-center gap-2 select-none animate-in fade-in duration-300">
+      {/* Solar Evaporation & Thermal Proximity Banner */}
+      {isEvaporating ? (
+        <div className="w-full bg-red-950/95 backdrop-blur-2xl border-2 border-orange-400 rounded-2xl px-4 py-3 shadow-[0_0_32px_rgba(249,115,22,0.7)] flex items-center justify-center gap-2 text-orange-100 animate-pulse">
+          <AlertTriangle className="w-5 h-5 text-orange-300 shrink-0" />
+          <span className="text-xs sm:text-sm font-black uppercase tracking-wide text-center">
+            CÁPSULA EVAPORADA PELO SOL! A renascer no espaço em órbita segura...
+          </span>
+        </div>
+      ) : solarHeatPct > 0 ? (
+        <div className="w-full bg-orange-950/95 backdrop-blur-2xl border border-amber-400/90 rounded-2xl px-3.5 py-2 shadow-[0_0_24px_rgba(245,158,11,0.5)] flex items-center justify-between gap-3 text-amber-100 animate-pulse">
+          <div className="flex items-center gap-2">
+            <Sun className="w-4 h-4 text-amber-300 shrink-0" />
+            <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wide">
+              CALOR SOLAR EXTREMO ({solarHeatPct}%) — AFASTE-SE DO SOL!
+            </span>
+          </div>
+          <div className="w-20 bg-black/50 rounded-full h-1.5 overflow-hidden border border-amber-400/40 shrink-0">
+            <div
+              className="h-full bg-gradient-to-r from-amber-400 to-red-500 rounded-full"
+              style={{ width: `${Math.min(100, solarHeatPct)}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {/* Educational Staging Banner (Desencapsulamento de 8s) */}
       {isStaging ? (
         <div className="w-full bg-slate-900/95 backdrop-blur-2xl border-2 border-amber-400/80 rounded-3xl p-3.5 sm:p-4 shadow-2xl flex flex-col gap-2.5 pointer-events-auto">
@@ -633,7 +662,7 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <div className="flex flex-col">
               <span className="text-[9px] uppercase font-mono tracking-wider text-slate-400">Velocidade</span>
-              <span className="text-xs sm:text-sm font-bold font-mono text-cyan-300">{speed} m/s</span>
+              <span className="text-xs sm:text-sm font-bold font-mono text-cyan-300">{speed} km/h</span>
             </div>
           </div>
 
@@ -662,7 +691,7 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
   );
 });
 
-// Real-time Earth Rocket Launch HUD: Compact on Mobile Screens, showing 5 to 0 Countdown, Fuel Percentage & Flight Speed
+// Real-time Earth Rocket Launch HUD: Compact on Mobile Screens, showing 5 to 0 Countdown, Fuel %, Rocket Weight (t) & Speed (KM/H)
 const EarthLaunchHUD = memo(function EarthLaunchHUD() {
   const scene = useGameStore((state) => state.scene);
   const launchTelemetry = useGameStore((state) => state.launchTelemetry);
@@ -670,17 +699,43 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
   if (scene !== 'surface' || launchTelemetry.status === 'idle') return null;
 
   const isCountdown = launchTelemetry.status === 'countdown';
+  const isFlameout = launchTelemetry.status === 'flameout';
+  const isCrashed = launchTelemetry.status === 'crashed';
   const countVal = launchTelemetry.countdown ?? 0;
 
   return (
-    <div className="fixed top-[178px] right-3 sm:top-24 sm:left-6 sm:right-auto w-44 sm:w-72 pointer-events-none z-30 flex flex-col gap-1.5 select-none animate-in fade-in duration-200">
-      <div className="w-full bg-slate-950/90 backdrop-blur-2xl border border-amber-400/80 rounded-2xl p-2 sm:p-3.5 shadow-[0_0_24px_rgba(245,158,11,0.28)] flex flex-col gap-1.5 sm:gap-2.5 text-white">
+    <div className="w-full sm:fixed sm:top-24 sm:left-6 sm:right-auto sm:w-72 pointer-events-none z-30 flex flex-col gap-1.5 select-none animate-in fade-in duration-200">
+      <div
+        className={`w-full bg-slate-950/92 backdrop-blur-2xl rounded-2xl p-2 sm:p-3.5 flex flex-col gap-1.5 sm:gap-2 text-white border ${
+          isFlameout || isCrashed
+            ? 'border-red-500 shadow-[0_0_26px_rgba(239,68,68,0.45)]'
+            : 'border-amber-400/80 shadow-[0_0_24px_rgba(245,158,11,0.28)]'
+        }`}
+      >
         {/* Compact Header & Countdown Badge */}
-        <div className="flex items-center justify-between border-b border-white/15 pb-1 sm:pb-2">
+        <div className="flex items-center justify-between border-b border-white/15 pb-1 sm:pb-1.5">
           <div className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full ${isCountdown ? 'bg-amber-400 animate-ping' : 'bg-emerald-400 animate-pulse'}`} />
-            <span className="text-[9px] sm:text-xs font-black uppercase tracking-wider font-mono text-amber-300">
-              {isCountdown ? 'CONTAGEM LANÇAMENTO' : 'FOGUETE EM VOO'}
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isFlameout || isCrashed
+                  ? 'bg-red-500 animate-ping'
+                  : isCountdown
+                  ? 'bg-amber-400 animate-ping'
+                  : 'bg-emerald-400 animate-pulse'
+              }`}
+            />
+            <span
+              className={`text-[9px] sm:text-xs font-black uppercase tracking-wider font-mono ${
+                isFlameout || isCrashed ? 'text-red-300' : 'text-amber-300'
+              }`}
+            >
+              {isCrashed
+                ? 'IMPACTO NO MAR'
+                : isFlameout
+                ? 'SEM COMBUSTÍVEL!'
+                : isCountdown
+                ? 'CONTAGEM LANÇAMENTO'
+                : 'FOGUETE EM VOO'}
             </span>
           </div>
           <span className="text-[8px] sm:text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-400/40">
@@ -689,13 +744,17 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
         </div>
 
         {/* Compact 5 to 0 Countdown Row */}
-        <div className="flex items-center justify-between bg-slate-900/90 rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 border border-white/10">
+        <div className="flex items-center justify-between bg-slate-900/90 rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2 border border-white/10">
           <div className="flex flex-col">
             <span className="text-[8px] sm:text-[10px] uppercase font-mono tracking-wider text-slate-400">
-              {isCountdown ? 'Ignição em' : 'Propulsão'}
+              {isCountdown ? 'Ignição em' : isFlameout || isCrashed ? 'Emergência' : 'Propulsão'}
             </span>
             <span className="text-[10px] sm:text-xs font-bold text-slate-100 leading-tight">
-              {isCountdown
+              {isCrashed
+                ? 'Caiu no Oceano!'
+                : isFlameout
+                ? 'Queda livre em curso...'
+                : isCountdown
                 ? countVal > 2
                   ? 'Torre a retrair...'
                   : 'Pré-Ignição!'
@@ -703,42 +762,61 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
             </span>
           </div>
           <div
-            className={`px-2 py-0.5 sm:px-3.5 sm:py-1 rounded-xl font-mono font-black text-sm sm:text-2xl border shadow-md ${
-              isCountdown
+            className={`px-2 py-0.5 sm:px-3 sm:py-1 rounded-xl font-mono font-black text-sm sm:text-xl border shadow-md ${
+              isFlameout || isCrashed
+                ? 'bg-red-500/25 border-red-400 text-red-300 animate-pulse'
+                : isCountdown
                 ? 'bg-amber-500/25 border-amber-400 text-amber-300'
                 : 'bg-emerald-500/25 border-emerald-400 text-emerald-300'
             }`}
           >
-            {isCountdown ? `T-${countVal}s` : 'VOANDO'}
+            {isCrashed ? 'QUEDA' : isFlameout ? 'FALHA' : isCountdown ? `T-${countVal}s` : 'VOANDO'}
           </div>
         </div>
 
-        {/* Compact Fuel Quantity Bar & Flight Speed Readout */}
-        <div className="grid grid-cols-2 gap-1.5 sm:gap-2.5">
+        {/* Fuel %, Velocity (KM/H) & Rocket Weight (t) */}
+        <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
           {/* Fuel Gauge */}
-          <div className="bg-slate-900/80 rounded-xl p-1.5 sm:p-2.5 border border-white/10 flex flex-col gap-1">
+          <div className="bg-slate-900/80 rounded-xl p-1.5 sm:p-2 border border-white/10 flex flex-col gap-1">
             <div className="flex items-center justify-between text-[8px] sm:text-[10px] font-mono uppercase text-slate-400">
               <span>Combust.</span>
-              <span className="font-bold text-amber-300 text-[9px] sm:text-xs">{launchTelemetry.fuel}%</span>
+              <span className={`font-bold text-[9px] sm:text-xs ${launchTelemetry.fuel < 25 ? 'text-red-400' : 'text-amber-300'}`}>
+                {launchTelemetry.fuel}%
+              </span>
             </div>
             <div className="w-full bg-slate-800 rounded-full h-1.5 sm:h-2 overflow-hidden border border-amber-500/30">
               <div
-                className="bg-gradient-to-r from-amber-500 via-orange-400 to-yellow-300 h-full rounded-full transition-all duration-150"
+                className={`h-full rounded-full transition-all duration-150 ${
+                  launchTelemetry.fuel < 25
+                    ? 'bg-gradient-to-r from-red-600 to-rose-400'
+                    : 'bg-gradient-to-r from-amber-500 via-orange-400 to-yellow-300'
+                }`}
                 style={{ width: `${Math.max(0, Math.min(100, launchTelemetry.fuel))}%` }}
               />
             </div>
           </div>
 
-          {/* Velocity & Altitude Readout */}
-          <div className="bg-slate-900/80 rounded-xl p-1.5 sm:p-2.5 border border-white/10 flex flex-col justify-between">
+          {/* Velocity (KM/H) & Altitude Readout */}
+          <div className="bg-slate-900/80 rounded-xl p-1.5 sm:p-2 border border-white/10 flex flex-col justify-between">
             <div className="flex items-center justify-between text-[8px] sm:text-[10px] font-mono uppercase text-slate-400">
               <span>Vel.</span>
               <span className="text-[8px] sm:text-[9px] text-cyan-400 font-bold">{launchTelemetry.altitude}m</span>
             </div>
-            <div className="text-xs sm:text-lg font-black font-mono text-cyan-300 leading-none">
-              {launchTelemetry.speed} <span className="text-[8px] sm:text-[10px] font-bold text-cyan-400">m/s</span>
+            <div className="text-xs sm:text-base font-black font-mono text-cyan-300 leading-none">
+              {launchTelemetry.speed} <span className="text-[8px] sm:text-[10px] font-bold text-cyan-400">km/h</span>
             </div>
           </div>
+        </div>
+
+        {/* Rocket Mass / Weight Readout */}
+        <div className="bg-slate-900/80 rounded-xl px-2 py-1 sm:px-2.5 sm:py-1.5 border border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-mono">
+          <span className="flex items-center gap-1 text-slate-400 uppercase">
+            <Scale className="w-3 h-3 text-amber-400" />
+            <span>Peso Foguete</span>
+          </span>
+          <span className="font-black text-amber-200">
+            {launchTelemetry.weightTons.toLocaleString('pt-PT')} t
+          </span>
         </div>
       </div>
     </div>
@@ -905,6 +983,9 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
   const toggleCameraMode = useGameStore((state) => state.toggleCameraMode);
   const mobileSprint = useGameStore((state) => state.mobileSprint);
   const setMobileSprint = useGameStore((state) => state.setMobileSprint);
+  const planetIndex = useGameStore((state) => state.planetIndex);
+  const isOxygenChamberOpen = useGameStore((state) => state.isOxygenChamberOpen);
+  const toggleOxygenChamber = useGameStore((state) => state.toggleOxygenChamber);
 
   return (
     <div className="hidden lg:flex gap-3 justify-end pointer-events-auto">
@@ -932,13 +1013,30 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
         <Camera className="w-6 h-6 group-hover:text-blue-400 transition-colors" />
       </button>
 
-      <button
-        onClick={() => onAction('collect')}
-        className="bg-white/10 hover:bg-white/20 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all backdrop-blur-md border border-white/20 group cursor-pointer"
-        title="Coletar Recursos [Tecla B]"
-      >
-        <Zap className="w-6 h-6 group-hover:text-yellow-400 transition-colors" />
-      </button>
+      {planetIndex === 0 ? (
+        <button
+          onClick={() => onAction('collect')}
+          className="bg-white/10 hover:bg-white/20 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all backdrop-blur-md border border-white/20 group cursor-pointer"
+          title="Coletar Recursos [Tecla B]"
+        >
+          <Zap className="w-6 h-6 group-hover:text-yellow-400 transition-colors" />
+        </button>
+      ) : (
+        <button
+          onClick={() => toggleOxygenChamber()}
+          className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all backdrop-blur-md border group cursor-pointer ${
+            isOxygenChamberOpen
+              ? 'bg-cyan-500/25 hover:bg-cyan-500/40 text-cyan-200 border-cyan-400/70 shadow-lg shadow-cyan-500/25'
+              : 'bg-red-950/90 hover:bg-red-900/90 text-red-200 border-red-400 shadow-lg shadow-red-500/45 animate-pulse'
+          }`}
+          title={`Câmara de Oxigénio (${isOxygenChamberOpen ? 'Ativa — Clique para Fechar' : 'Fechada — Clique para Abrir'}) [Tecla E]`}
+        >
+          <Wind className={`w-5 h-5 group-hover:scale-110 transition-transform ${isOxygenChamberOpen ? 'text-cyan-300' : 'text-red-300'}`} />
+          <span className={`text-[9px] font-mono font-black leading-none mt-0.5 ${isOxygenChamberOpen ? 'text-cyan-200' : 'text-red-200'}`}>
+            {isOxygenChamberOpen ? 'O₂' : 'ABRIR O₂'}
+          </span>
+        </button>
+      )}
 
       {/* Run / Sprint Button replacing the Hammer icon */}
       <button
@@ -1137,17 +1235,40 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
   );
 });
 
-// Compact Always-Visible Astronaut Life Support Card placed in Top-Right Corner directly below the Settings button
+// Compact Always-Visible Astronaut Life Support Card placed in Top-Right Stack directly below Settings (surface) or below Space Monitoring HUD (space, strictly hidden during orbital staging)
 const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
+  const scene = useGameStore((state) => state.scene);
+  const planetIndex = useGameStore((state) => state.planetIndex);
+  const stagingProgress = useGameStore((state) => state.spaceFlightData.stagingProgress);
   const health = useGameStore((state) => state.health);
   const maxHealth = useGameStore((state) => state.maxHealth);
   const oxygen = useGameStore((state) => state.oxygen);
   const activeHazard = useGameStore((state) => state.activeHazard);
+  const dehydrationSeconds = useGameStore((state) => state.dehydrationSeconds);
+  const isOxygenChamberOpen = useGameStore((state) => state.isOxygenChamberOpen);
+  const isDying = useGameStore((state) => state.isDying);
 
-  const statusBadge = activeHazard
+  if (scene === 'space' && stagingProgress < 1.0) {
+    return null;
+  }
+
+  const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
+  const isSolarProximityDrain =
+    scene === 'surface' && (currentPlanet.type === 'mercury' || currentPlanet.type === 'venus');
+  const isChamberClosed = scene === 'surface' && planetIndex !== 0 && !isOxygenChamberOpen;
+
+  const statusBadge = isDying
+    ? { text: 'MORREU!', cls: 'text-red-100 bg-red-700 border-red-300 animate-pulse' }
+    : isChamberClosed
+    ? { text: 'CÂMARA FECHADA!', cls: 'text-red-200 bg-red-950/95 border-red-400 animate-pulse' }
+    : activeHazard
     ? activeHazard.type === 'radiation'
       ? { text: 'RADIAÇÃO!', cls: 'text-lime-300 bg-lime-950/90 border-lime-400/60 animate-pulse' }
       : { text: 'TÓXICO!', cls: 'text-amber-300 bg-amber-950/90 border-amber-400/60 animate-pulse' }
+    : oxygen <= 0 && dehydrationSeconds >= 20
+    ? { text: 'DESIDRATAÇÃO!', cls: 'text-red-200 bg-red-900/95 border-red-400 animate-pulse' }
+    : oxygen <= 0
+    ? { text: 'HIDRATAR!', cls: 'text-amber-200 bg-amber-900/95 border-amber-400 animate-pulse' }
     : health < 35 || oxygen < 30
     ? { text: 'Alerta', cls: 'text-red-300 bg-red-950/90 border-red-400/50 animate-pulse' }
     : maxHealth > 100
@@ -1155,10 +1276,12 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
     : { text: 'Nominal', cls: 'text-emerald-400 bg-emerald-950/80 border-emerald-500/30' };
 
   return (
-    <div className="absolute top-[72px] right-3 sm:top-[90px] sm:right-6 z-20 pointer-events-none select-none w-44 sm:w-52">
+    <div className="w-full pointer-events-none select-none">
       <div
         className={`bg-slate-950/85 backdrop-blur-xl rounded-2xl p-2 sm:p-2.5 shadow-xl flex flex-col gap-1.5 text-white border transition-colors ${
-          activeHazard ? 'border-red-500/70 shadow-red-500/20' : 'border-white/15'
+          isDying || isChamberClosed || activeHazard || oxygen <= 0
+            ? 'border-red-500/80 shadow-red-500/30'
+            : 'border-white/15'
         }`}
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-1">
@@ -1178,12 +1301,12 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
               <span>Traje</span>
             </span>
             <span className="font-mono font-bold text-rose-200">
-              {Math.round(health)}/{maxHealth}
+              {Math.max(0, Math.round(health))}/{maxHealth}
             </span>
           </div>
           <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden border border-rose-500/25">
             <div
-              className={`h-full rounded-full transition-all duration-300 ${
+              className={`h-full rounded-full transition-all duration-150 ${
                 maxHealth > 100 ? 'bg-gradient-to-r from-emerald-400 to-cyan-400' : 'bg-gradient-to-r from-rose-500 to-red-400'
               }`}
               style={{ width: `${Math.max(0, Math.min(100, (health / maxHealth) * 100))}%` }}
@@ -1199,16 +1322,30 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
               <span>Água & O₂</span>
             </span>
             <span className="font-mono font-bold text-cyan-200">
-              {oxygen.toFixed(0)}%
+              {Math.max(0, oxygen).toFixed(0)}%
             </span>
           </div>
           <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden border border-cyan-500/25">
             <div
-              className="bg-gradient-to-r from-cyan-500 to-blue-400 h-full rounded-full transition-all duration-300"
+              className="bg-gradient-to-r from-cyan-500 to-blue-400 h-full rounded-full transition-all duration-150"
               style={{ width: `${Math.max(0, Math.min(100, oxygen))}%` }}
             />
           </div>
         </div>
+
+        {isChamberClosed && (
+          <div className="flex items-center justify-between text-[8px] font-mono text-red-200 bg-red-950/90 border border-red-400/70 rounded-lg px-1.5 py-0.5 animate-pulse">
+            <span>Câmara O₂ Fechada</span>
+            <span className="font-bold">-10% / 3s</span>
+          </div>
+        )}
+
+        {isSolarProximityDrain && (
+          <div className="flex items-center justify-between text-[8px] font-mono text-amber-300 bg-amber-950/60 border border-amber-500/30 rounded-lg px-1.5 py-0.5">
+            <span>Calor Solar Extremo</span>
+            <span className="font-bold">-2% / 3m</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1237,10 +1374,119 @@ const HazardExposureAlert = memo(function HazardExposureAlert() {
             {isRadiation ? 'EXPOSIÇÃO RADIOATIVA' : 'ZONA DE GÁS TÓXICO'} • {activeHazard.name}
           </span>
           <span className="text-[9px] sm:text-[10px] font-mono opacity-90">
-            Traje e Água/O₂ a diminuir ({activeHazard.distance.toFixed(1)}m) — afaste-se ou colete [B]!
+            Traje e Água/O₂ a diminuir ({activeHazard.distance.toFixed(1)}m) — afaste-se!
           </span>
         </div>
       </div>
+    </div>
+  );
+});
+
+const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
+  const oxygen = useGameStore((state) => state.oxygen);
+  const dehydrationSeconds = useGameStore((state) => state.dehydrationSeconds);
+  const lastRespawnAt = useGameStore((state) => state.lastRespawnAt);
+  const lastRespawnReason = useGameStore((state) => state.lastRespawnReason);
+  const planetIndex = useGameStore((state) => state.planetIndex);
+  const launchFailureMsg = useGameStore((state) => state.launchFailureMsg);
+  const setLaunchFailureMsg = useGameStore((state) => state.setLaunchFailureMsg);
+  const isDying = useGameStore((state) => state.isDying);
+  const dyingReason = useGameStore((state) => state.dyingReason);
+  const scene = useGameStore((state) => state.scene);
+  const [showRespawnToast, setShowRespawnToast] = useState(false);
+
+  useEffect(() => {
+    if (!lastRespawnAt) return;
+    setShowRespawnToast(true);
+    const t = setTimeout(() => setShowRespawnToast(false), 5000);
+    return () => clearTimeout(t);
+  }, [lastRespawnAt]);
+
+  useEffect(() => {
+    if (!launchFailureMsg) return;
+    const t = setTimeout(() => setLaunchFailureMsg(null), 4500);
+    return () => clearTimeout(t);
+  }, [launchFailureMsg, setLaunchFailureMsg]);
+
+  if (scene !== 'surface') return null;
+
+  const showDehydration = oxygen <= 0 && !isDying;
+  if (!isDying && !showDehydration && !showRespawnToast && !launchFailureMsg) return null;
+
+  const remainingGrace = Math.max(1, Math.ceil(20 - dehydrationSeconds));
+  const drainingSuit = dehydrationSeconds >= 20;
+  const planetName = (PLANETS[planetIndex] || PLANETS[0]).name;
+  const isDangerToast = lastRespawnReason === 'rocket_crash' || lastRespawnReason === 'oxygen_chamber';
+
+  return (
+    <div className="fixed top-[128px] sm:top-[152px] left-1/2 -translate-x-1/2 z-40 pointer-events-none select-none flex flex-col items-center gap-1.5 px-3 max-w-[92vw]">
+      {isDying && (
+        <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-red-950/95 border-2 border-red-400 text-red-50 shadow-[0_0_32px_rgba(239,68,68,0.75)] backdrop-blur-xl animate-pulse">
+          <AlertTriangle className="w-5 h-5 text-red-300 shrink-0" />
+          <div className="flex flex-col">
+            <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+              O ASTRONAUTA MORREU!
+            </span>
+            <span className="text-[10px] sm:text-xs font-mono text-red-200">
+              {dyingReason === 'oxygen_chamber'
+                ? `Câmara de Oxigénio fechada — proteção esgotada! A renascer em ${planetName}...`
+                : 'Proteção do traje chegou a 0 — a renascer...'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {launchFailureMsg && (
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-red-950/95 border border-red-400/90 text-red-100 shadow-2xl backdrop-blur-xl animate-in fade-in duration-200">
+          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+          <span className="text-[10px] sm:text-xs font-bold">{launchFailureMsg}</span>
+        </div>
+      )}
+
+      {showRespawnToast && (
+        <div
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl shadow-2xl backdrop-blur-xl animate-in fade-in duration-200 border ${
+            isDangerToast
+              ? 'bg-red-950/95 border-red-400/85 text-red-100'
+              : 'bg-slate-950/95 border-cyan-400/80 text-cyan-100'
+          }`}
+        >
+          <CheckCircle2 className={`w-4 h-4 shrink-0 ${isDangerToast ? 'text-red-400' : 'text-cyan-400'}`} />
+          <span className="text-[10px] sm:text-xs font-bold">
+            {lastRespawnReason === 'rocket_crash'
+              ? 'Foguete caiu no mar por falta de combustível — o astronauta morreu e reiniciou no Hangar!'
+              : lastRespawnReason === 'oxygen_chamber'
+              ? `Câmara de Oxigénio fechada em ${planetName} — o astronauta morreu e renasceu nesta posição!`
+              : planetIndex !== 0
+              ? `Proteção do traje chegou a 0 — renasceu na sua posição em ${planetName}!`
+              : 'Proteção do traje chegou a 0 — renasceu no Hangar com Suporte de Vida restaurado!'}
+          </span>
+        </div>
+      )}
+
+      {showDehydration && (
+        <div
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl border shadow-2xl backdrop-blur-xl animate-in fade-in duration-150 ${
+            drainingSuit
+              ? 'bg-red-950/95 border-red-400 text-red-100'
+              : 'bg-amber-950/95 border-amber-400 text-amber-100'
+          }`}
+        >
+          <Droplets className="w-4 h-4 shrink-0 text-cyan-300 animate-pulse" />
+          <div className="flex flex-col">
+            <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wide text-white">
+              {drainingSuit
+                ? 'DESIDRATAÇÃO CRÍTICA — TRAJE A PERDER PROTEÇÃO!'
+                : 'ÁGUA & O₂ ESGOTADA — HIDRATE-SE!'}
+            </span>
+            <span className="text-[9px] sm:text-[10px] font-mono opacity-95">
+              {drainingSuit
+                ? 'Use água/suprimentos na Mochila [I] imediatamente antes que a proteção zere!'
+                : `Beba água ou colete oxigénio — desconto na proteção do traje em ${remainingGrace}s`}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
@@ -1368,6 +1614,7 @@ const VABDoorAlert = memo(function VABDoorAlert() {
 
 const DesktopControlsGuide = memo(function DesktopControlsGuide() {
   const scene = useGameStore((state) => state.scene);
+  const planetIndex = useGameStore((state) => state.planetIndex);
   const drivingCarId = useGameStore((state) => state.drivingCarId);
 
   return (
@@ -1398,7 +1645,7 @@ const DesktopControlsGuide = memo(function DesktopControlsGuide() {
               <strong className="text-white/90">R</strong> Subir no Carro / Foguete
             </p>
             <p>
-              <strong className="text-white/90">B</strong> Coletar Recursos • <strong className="text-white/90">E</strong> Portão
+              <strong className="text-white/90">B</strong> Coletar / Recarregar • <strong className="text-white/90">E</strong> {planetIndex === 0 ? 'Portão' : 'Câmara O₂'}
             </p>
             <p>
               <strong className="text-white/90">I</strong> Mochila • <strong className="text-white/90">V</strong> Viseira
@@ -1428,12 +1675,38 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
   const carSpeedKmh = useGameStore((state) => state.carSpeedKmh);
   const isNearRocket = useGameStore((state) => state.isNearRocket);
   const isLaunching = useGameStore((state) => state.isLaunching);
+  const rocketFuel = useGameStore((state) => state.rocketFuel);
+  const addRocketFuel = useGameStore((state) => state.addRocketFuel);
+  const setLaunchFailureMsg = useGameStore((state) => state.setLaunchFailureMsg);
   const setLaunching = useGameStore((state) => state.setLaunching);
   const setLaunchTelemetry = useGameStore((state) => state.setLaunchTelemetry);
   const toggleDriveCar = useGameStore((state) => state.toggleDriveCar);
   const toggleCameraMode = useGameStore((state) => state.toggleCameraMode);
   const cameraMode = useGameStore((state) => state.cameraMode);
   const carStates = useGameStore((state) => state.carStates);
+
+  const [isRefueling, setIsRefueling] = useState(false);
+
+  useEffect(() => {
+    if (!isRefueling || !isNearRocket || isLaunching || scene !== 'surface' || planetIndex !== 0) {
+      return;
+    }
+    let lastSound = 0;
+    const interval = setInterval(() => {
+      const currFuel = useGameStore.getState().rocketFuel;
+      if (currFuel >= 100) {
+        setIsRefueling(false);
+        return;
+      }
+      addRocketFuel(1.6);
+      const now = performance.now();
+      if (now - lastSound > 190) {
+        lastSound = now;
+        playRefuelPumpSound();
+      }
+    }, 55);
+    return () => clearInterval(interval);
+  }, [isRefueling, isNearRocket, isLaunching, scene, planetIndex, addRocketFuel]);
 
   if (scene !== 'surface') return null;
 
@@ -1471,11 +1744,18 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
   const handleBoardRocket = () => {
     if (!isLaunching && isNearRocket) {
       if (planetIndex === 0) {
+        const currentFuel = useGameStore.getState().rocketFuel;
+        if (currentFuel <= 0) {
+          setLaunchFailureMsg('Sem combustível (0%)! Pressione e segure "Abastecer Foguete" antes de descolar.');
+          return;
+        }
+        setLaunchFailureMsg(null);
         setLaunchTelemetry({
           countdown: 5,
-          fuel: 100,
+          fuel: Math.round(currentFuel),
           speed: 0,
           altitude: 0,
+          weightTons: Math.round(420 + currentFuel * 25.5),
           status: 'countdown',
         });
       }
@@ -1483,23 +1763,25 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
     }
   };
 
+  const rocketFuelPct = Math.round(rocketFuel);
+  const rocketWeightTons = Math.round(420 + rocketFuel * 25.5);
+
   return (
-    <div className="fixed bottom-4 sm:bottom-8 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex flex-col items-center gap-1 animate-in fade-in duration-200 max-w-[88vw]">
+    <div className="w-full pointer-events-auto flex flex-col items-stretch gap-1.5 animate-in fade-in duration-200">
       {drivingCarId && activeCar ? (
-        /* Compact Bottom-Center Speedometer & Cockpit HUD (Positioned cleanly at bottom-center between directional arrows and action buttons) */
-        <div className="flex items-center gap-1.5 sm:gap-3 bg-slate-950/92 backdrop-blur-xl border border-cyan-400/75 px-2 py-1 sm:px-4 sm:py-2 rounded-xl sm:rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.3)] text-white">
-          {/* Live Speedometer Readout + Progress Bar */}
-          <div className="flex items-center gap-1.5 sm:gap-2 pr-1.5 sm:pr-3 border-r border-white/15">
-            <div className="flex flex-col min-w-[54px] sm:min-w-[82px]">
-              <div className="flex items-baseline justify-between gap-1">
-                <span className="text-sm sm:text-xl font-black font-mono text-cyan-300 leading-none">
+        /* Compact Top-Right Speedometer & Cockpit HUD placed directly below Suporte de Vida */
+        <div className="w-full flex flex-col gap-1.5 bg-slate-950/92 backdrop-blur-xl border border-cyan-400/75 p-2 sm:p-2.5 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.3)] text-white">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col flex-1 min-w-0">
+              <div className="flex items-baseline gap-1">
+                <span className="text-base sm:text-xl font-black font-mono text-cyan-300 leading-none">
                   {carSpeedKmh}
                 </span>
-                <span className="text-[7px] sm:text-[10px] font-mono text-slate-400 font-bold">
+                <span className="text-[8px] sm:text-[9px] font-mono text-slate-400 font-bold">
                   KM/H
                 </span>
               </div>
-              <div className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full overflow-hidden mt-0.5 border border-cyan-500/30">
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1 border border-cyan-500/30">
                 <div
                   className="h-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-amber-400 transition-all duration-75"
                   style={{ width: `${Math.max(4, speedPct)}%` }}
@@ -1507,69 +1789,206 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
               </div>
             </div>
             {/* Gear Indicator Badge */}
-            <div className="w-5 h-5 sm:w-7 sm:h-7 rounded-md sm:rounded-lg bg-cyan-500/20 border border-cyan-400/50 flex flex-col items-center justify-center">
-              <span className="text-[6px] sm:text-[7px] font-mono text-cyan-300 leading-none">G</span>
-              <span className="text-[9px] sm:text-xs font-black font-mono text-white leading-none">
+            <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-400/50 flex flex-col items-center justify-center shrink-0">
+              <span className="text-[7px] font-mono text-cyan-300 leading-none">G</span>
+              <span className="text-[10px] font-black font-mono text-white leading-none">
                 {gearLabel}
               </span>
             </div>
           </div>
 
-          {/* Quick 1st/3rd Person Cockpit Camera Toggle */}
-          <button
-            onClick={() => toggleCameraMode()}
-            className="px-1.5 py-0.5 sm:px-2.5 sm:py-1.5 rounded-lg sm:rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-cyan-200 border border-cyan-400/30 font-mono text-[8px] sm:text-[10px] font-bold uppercase tracking-wider cursor-pointer"
-            title="Alternar Câmara Interior (Volante) / Exterior"
-          >
-            {cameraMode === 'first' ? '3ª Pessoa' : '1ª Pessoa'}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {/* Quick 1st/3rd Person Cockpit Camera Toggle */}
+            <button
+              onClick={() => toggleCameraMode()}
+              className="flex-1 py-1 px-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-cyan-200 border border-cyan-400/30 font-mono text-[9px] sm:text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+              title="Alternar Câmara Interior (Volante) / Exterior"
+            >
+              {cameraMode === 'first' ? '3ª Pessoa' : '1ª Pessoa'}
+            </button>
 
-          {/* Exit Vehicle Button [R] */}
-          <button
-            onClick={() => toggleDriveCar()}
-            className="px-2 py-0.5 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-mono text-[9px] sm:text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center gap-1"
-          >
-            <span>Sair</span>
-            <span className="px-1 py-0.2 rounded bg-black/40 text-[8px] border border-white/25">R</span>
-          </button>
+            {/* Exit Vehicle Button [R] */}
+            <button
+              onClick={() => toggleDriveCar()}
+              className="py-1 px-2 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-mono text-[9px] sm:text-[10px] font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center gap-1 shrink-0"
+            >
+              <span>Sair</span>
+              <span className="px-1 py-0.2 rounded bg-black/40 text-[8px] border border-white/25">R</span>
+            </button>
+          </div>
         </div>
       ) : activeCar ? (
         <button
           onClick={() => toggleDriveCar()}
-          className="flex items-center gap-2 bg-slate-950/90 hover:bg-slate-900 backdrop-blur-xl border border-emerald-400/80 px-2.5 py-1 sm:px-4 sm:py-2 rounded-xl sm:rounded-2xl shadow-[0_0_16px_rgba(16,185,129,0.3)] text-white transition-all active:scale-95 cursor-pointer group"
+          className="w-full flex items-center justify-between gap-2 bg-slate-950/92 hover:bg-slate-900 backdrop-blur-xl border border-emerald-400/80 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-2xl shadow-[0_0_16px_rgba(16,185,129,0.3)] text-white transition-all active:scale-95 cursor-pointer group"
         >
-          <div className="flex flex-col text-left">
-            <span className="text-[7px] sm:text-[9px] font-mono uppercase tracking-wider text-emerald-400 font-bold leading-tight">
+          <div className="flex flex-col text-left min-w-0">
+            <span className="text-[8px] font-mono uppercase tracking-wider text-emerald-400 font-bold leading-tight truncate">
               {activeCar.name}
             </span>
             <span className="text-[10px] sm:text-xs font-extrabold tracking-wide text-white group-hover:text-emerald-200 leading-tight">
               Entrar no Carro
             </span>
           </div>
-          <span className="px-1.5 py-0.5 rounded-md bg-emerald-500 text-slate-950 font-mono text-[10px] font-black shadow-sm">
+          <span className="px-1.5 py-0.5 rounded-md bg-emerald-500 text-slate-950 font-mono text-[10px] font-black shadow-sm shrink-0">
             R
           </span>
         </button>
       ) : null}
 
       {showRocketPrompt && (
-        <button
-          onClick={handleBoardRocket}
-          className="flex items-center gap-2 bg-slate-950/92 hover:bg-slate-900 backdrop-blur-xl border border-amber-400/85 px-2.5 py-1 sm:px-4 sm:py-2 rounded-xl sm:rounded-2xl shadow-[0_0_18px_rgba(245,158,11,0.35)] text-white transition-all active:scale-95 cursor-pointer group"
-        >
-          <div className="flex flex-col text-left">
-            <span className="text-[7px] sm:text-[9px] font-mono uppercase tracking-wider text-amber-400 font-bold leading-tight">
-              {planetIndex === 0 ? 'Foguete Pad 39A' : 'Cápsula'}
+        <div className="w-full flex flex-col gap-1.5">
+          {planetIndex === 0 && (
+            <div className="w-full bg-slate-950/94 backdrop-blur-xl border border-amber-400/75 p-2 sm:p-2.5 rounded-2xl shadow-[0_0_20px_rgba(245,158,11,0.28)] text-white flex flex-col gap-1.5">
+              <div className="flex items-center justify-between border-b border-white/10 pb-1">
+                <span className="flex items-center gap-1 text-[8px] sm:text-[9px] font-mono font-bold uppercase text-amber-300">
+                  <Fuel className="w-3 h-3 text-amber-400" />
+                  <span>Painel Abastecimento</span>
+                </span>
+                <span
+                  className={`text-[9px] sm:text-[10px] font-mono font-black ${
+                    rocketFuelPct >= 85
+                      ? 'text-emerald-400'
+                      : rocketFuelPct > 0
+                      ? 'text-amber-300'
+                      : 'text-red-400'
+                  }`}
+                >
+                  {rocketFuelPct}%
+                </span>
+              </div>
+
+              {/* Fuel Gauge with 85% Safe Orbit Threshold Marker */}
+              <div className="relative w-full h-2.5 bg-slate-800 rounded-full overflow-hidden border border-white/15">
+                <div
+                  className={`h-full transition-all duration-75 ${
+                    rocketFuelPct >= 85
+                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-400'
+                      : rocketFuelPct > 0
+                      ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                      : 'bg-red-600'
+                  }`}
+                  style={{ width: `${Math.max(0, Math.min(100, rocketFuel))}%` }}
+                />
+                {/* 85% Safe Orbit Threshold Line */}
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_6px_#ffffff]"
+                  style={{ left: '85%' }}
+                  title="Mínimo seguro para órbita: 85%"
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-[8px] sm:text-[9px] font-mono text-slate-300">
+                <span className="flex items-center gap-1">
+                  <Scale className="w-2.5 h-2.5 text-cyan-400" />
+                  <span>Peso: {rocketWeightTons.toLocaleString('pt-PT')} t</span>
+                </span>
+                <span className={rocketFuelPct >= 85 ? 'text-emerald-400 font-bold' : rocketFuelPct > 0 ? 'text-amber-300 font-bold' : 'text-red-400 font-bold'}>
+                  {rocketFuelPct >= 85 ? 'Órbita Segura' : rocketFuelPct > 0 ? 'Queda <85%' : 'Vazio'}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setIsRefueling(true);
+                }}
+                onPointerUp={() => setIsRefueling(false)}
+                onPointerLeave={() => setIsRefueling(false)}
+                onPointerCancel={() => setIsRefueling(false)}
+                disabled={rocketFuelPct >= 100}
+                className={`w-full py-1.5 px-2 rounded-xl font-mono text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+                  rocketFuelPct >= 100
+                    ? 'bg-emerald-600/40 border border-emerald-400/50 text-emerald-200 cursor-default'
+                    : isRefueling
+                    ? 'bg-amber-400 text-slate-950 border border-white scale-98 shadow-[0_0_16px_rgba(251,191,36,0.6)]'
+                    : 'bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/80 text-amber-200 active:scale-95'
+                }`}
+              >
+                <Fuel className={`w-3.5 h-3.5 ${isRefueling ? 'animate-bounce' : ''}`} />
+                <span>
+                  {rocketFuelPct >= 100
+                    ? 'Tanque Cheio (100%)'
+                    : isRefueling
+                    ? 'A Abastecer...'
+                    : 'Segurar p/ Abastecer'}
+                </span>
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={handleBoardRocket}
+            className={`w-full flex items-center justify-between gap-2 bg-slate-950/92 hover:bg-slate-900 backdrop-blur-xl px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-2xl text-white transition-all active:scale-95 cursor-pointer group border ${
+              planetIndex === 0 && rocketFuelPct <= 0
+                ? 'border-red-400/80 shadow-[0_0_14px_rgba(239,68,68,0.28)]'
+                : 'border-amber-400/85 shadow-[0_0_18px_rgba(245,158,11,0.35)]'
+            }`}
+          >
+            <div className="flex flex-col text-left min-w-0">
+              <span className="text-[8px] font-mono uppercase tracking-wider text-amber-400 font-bold leading-tight truncate">
+                {planetIndex === 0 ? 'Foguete Pad 39A' : 'Cápsula'}
+              </span>
+              <span className="text-[10px] sm:text-xs font-extrabold tracking-wide text-white group-hover:text-amber-200 leading-tight">
+                Subir no Foguete
+              </span>
+            </div>
+            <span className="px-1.5 py-0.5 rounded-md bg-amber-400 text-slate-950 font-mono text-[10px] font-black shadow-sm shrink-0">
+              R
             </span>
-            <span className="text-[10px] sm:text-xs font-extrabold tracking-wide text-white group-hover:text-amber-200 leading-tight">
-              Subir no Foguete
-            </span>
-          </div>
-          <span className="px-1.5 py-0.5 rounded-md bg-amber-400 text-slate-950 font-mono text-[10px] font-black shadow-sm">
-            R
-          </span>
-        </button>
+          </button>
+        </div>
       )}
+    </div>
+  );
+});
+
+const TopRightComputerLibraryButton = memo(function TopRightComputerLibraryButton() {
+  const scene = useGameStore((s) => s.scene);
+  const isNearComputer = useGameStore((s) => s.isNearComputer);
+  const isComputerLibraryOpen = useGameStore((s) => s.isComputerLibraryOpen);
+  const setComputerLibraryOpen = useGameStore((s) => s.setComputerLibraryOpen);
+  const drivingCarId = useGameStore((s) => s.drivingCarId);
+
+  if (scene !== 'surface' || !isNearComputer || isComputerLibraryOpen || drivingCarId) return null;
+
+  return (
+    <button
+      onClick={() => setComputerLibraryOpen(true)}
+      className="w-full pointer-events-auto flex items-center justify-between gap-2 bg-slate-950/92 hover:bg-slate-900 backdrop-blur-xl border border-cyan-400/85 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-2xl shadow-[0_0_18px_rgba(6,182,212,0.38)] text-white transition-all active:scale-95 cursor-pointer group animate-in fade-in duration-200"
+    >
+      <div className="flex items-center gap-1.5 min-w-0">
+        <BookOpen className="w-4 h-4 text-cyan-300 shrink-0" />
+        <div className="flex flex-col text-left min-w-0">
+          <span className="text-[8px] font-mono uppercase tracking-wider text-cyan-300 font-bold leading-tight truncate">
+            Biblioteca Digital
+          </span>
+          <span className="text-[10px] sm:text-xs font-extrabold tracking-wide text-white group-hover:text-cyan-200 leading-tight truncate">
+            Abrir Biblioteca
+          </span>
+        </div>
+      </div>
+      <span className="px-1.5 py-0.5 rounded-md bg-cyan-400 text-slate-950 font-mono text-[10px] font-black shadow-sm shrink-0">
+        C
+      </span>
+    </button>
+  );
+});
+
+const TopRightHUDStack = memo(function TopRightHUDStack() {
+  const scene = useGameStore((s) => s.scene);
+
+  return (
+    <div
+      className={`fixed right-3 sm:right-6 z-30 flex flex-col items-end gap-2 w-48 sm:w-56 pointer-events-none ${
+        scene === 'space' ? 'top-[132px] sm:top-[118px]' : 'top-[62px] sm:top-[82px]'
+      }`}
+    >
+      <AstronautLifeSupportHUD />
+      <VehicleDriveHUD />
+      <TopRightComputerLibraryButton />
+      <EarthLaunchHUD />
     </div>
   );
 });
@@ -1595,6 +2014,7 @@ export function Game() {
   const setSuitStyle = useGameStore((state) => state.setSuitStyle);
   const toggleHabitatDoor = useGameStore((state) => state.toggleHabitatDoor);
 
+  const scene = useGameStore((state) => state.scene);
   const planetIndex = useGameStore((state) => state.planetIndex);
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
   const gravity = useGameStore((state) => state.gravity);
@@ -1658,6 +2078,11 @@ export function Game() {
     updateAudio(isHostile, gravity);
   }, [planetIndex, gravity, currentPlanet.type]);
 
+  // Switch between Earth ocean/machinery, alien planet, and deep-space audio soundscapes
+  useEffect(() => {
+    setAudioEnvironment(scene, planetIndex);
+  }, [scene, planetIndex]);
+
   // Auto-dismiss item pickup toast
   useEffect(() => {
     if (recentCollectedItem) {
@@ -1681,11 +2106,18 @@ export function Game() {
           state.toggleDriveCar();
         } else if (state.isNearRocket && !state.isLaunching) {
           if (state.planetIndex === 0) {
+            if (state.rocketFuel <= 0) {
+              state.setLaunchFailureMsg('Foguete sem combustível (0%)! Segure "Abastecer Foguete" no painel antes de lançar.');
+              return;
+            }
+            const f = state.rocketFuel;
+            state.setLaunchFailureMsg(null);
             state.setLaunchTelemetry({
               countdown: 5,
-              fuel: 100,
+              fuel: Math.round(f),
               speed: 0,
               altitude: 0,
+              weightTons: Math.round(420 + f * 25.5),
               status: 'countdown',
             });
           }
@@ -1696,9 +2128,14 @@ export function Game() {
       if (e.key === 'b' || e.key === 'B') {
         handleAction('collect');
       }
-      // Key E: Toggle Hangar Door
+      // Key E: Toggle Hangar Door (Earth) or Oxygen Chamber (Other Planets)
       if (e.key === 'e' || e.key === 'E') {
-        toggleHabitatDoor();
+        const st = useGameStore.getState();
+        if (st.planetIndex === 0) {
+          toggleHabitatDoor();
+        } else {
+          st.toggleOxygenChamber();
+        }
       }
       // Key I: Toggle Survival Backpack Inventory
       if (e.key === 'i' || e.key === 'I') {
@@ -1727,11 +2164,9 @@ export function Game() {
       <CrosshairOverlay />
       <HUDHeader />
       <SpaceFlightHUD />
-      <EarthLaunchHUD />
       <HazardExposureAlert />
+      <LifeSupportCriticalAlert />
       <MissionControlCenterView />
-      <VehicleDriveHUD />
-      <ComputerProximityPrompt />
       <ComputerBookLibraryModal />
 
       {/* Action Buttons (Bottom Right) */}
@@ -1776,8 +2211,8 @@ export function Game() {
         </button>
       </div>
 
-      {/* Compact Astronaut Life Support Card directly below Settings in Top-Right Corner */}
-      <AstronautLifeSupportHUD />
+      {/* Top-Right Stack directly under Life Support on Surface, or cleanly below Capsule Monitoring HUD in Space */}
+      <TopRightHUDStack />
 
       {/* Mobile-Optimized Fullscreen Modal Dialogs with Backdrop Blur */}
       {showCharacterMenu && (
@@ -1840,8 +2275,8 @@ export function Game() {
       {/* Desktop Controls Guide */}
       <DesktopControlsGuide />
 
-      {/* Free Fire Style Tactical Survival Backpack Button (Above Left Joystick on Mobile, Bottom-Left on PC) */}
-      <div className="absolute bottom-[216px] left-5 sm:bottom-[236px] sm:left-9 lg:bottom-6 lg:left-6 z-30 pointer-events-auto select-none">
+      {/* Free Fire Style Tactical Survival Backpack Button (Above Left Joystick / Driving Pad on Mobile, Bottom-Left on PC) */}
+      <div className="absolute bottom-[226px] left-5 sm:bottom-[246px] sm:left-9 lg:bottom-6 lg:left-6 z-30 pointer-events-auto select-none">
         <button
           onClick={() => {
             setShowInventory(!showInventory);

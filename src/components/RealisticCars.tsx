@@ -1,12 +1,70 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Quaternion, Euler } from 'three';
+import { Group, Quaternion, Euler, Vector3, Matrix4 } from 'three';
 import { RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
 import { Text } from '@react-three/drei';
 import { useGameStore } from '../store';
 
 const _carQuat = new Quaternion();
 const _carEuler = new Euler();
+
+// Pre-allocated scratch math objects for zero-GC 60 FPS 1st-person cockpit arm IK
+const _yAxis = new Vector3(0, 1, 0);
+const _wheelTiltEuler = new Euler(0.38, 0, 0);
+const _wheelSpinEuler = new Euler(0, 0, 0);
+const _wheelCenter = new Vector3(0.38, 0.80, 0.24);
+const _lShoulder = new Vector3(0.575, 0.72, -0.15);
+const _rShoulder = new Vector3(0.185, 0.72, -0.15);
+const _lPole = new Vector3(0.72, -0.58, -0.32).normalize();
+const _rPole = new Vector3(-0.72, -0.58, -0.32).normalize();
+const _gripLocalL = new Vector3();
+const _gripLocalR = new Vector3();
+const _handPosL = new Vector3();
+const _handPosR = new Vector3();
+const _elbowPosL = new Vector3();
+const _elbowPosR = new Vector3();
+const _toHand = new Vector3();
+const _dir = new Vector3();
+const _perp = new Vector3();
+const _segDir = new Vector3();
+const _palmInward = new Vector3();
+const _handUp = new Vector3();
+const _handSide = new Vector3();
+const _handMat = new Matrix4();
+
+const ARM_UPPER_LEN = 0.255;
+const ARM_FORE_LEN = 0.245;
+
+function solveTwoBoneElbow(
+  shoulder: Vector3,
+  hand: Vector3,
+  pole: Vector3,
+  outElbow: Vector3
+) {
+  _toHand.subVectors(hand, shoulder);
+  const rawDist = _toHand.length();
+  const maxReach = ARM_UPPER_LEN + ARM_FORE_LEN - 0.012;
+  const dist = Math.max(0.11, Math.min(maxReach, rawDist));
+  if (rawDist > 1e-5) {
+    _dir.copy(_toHand).divideScalar(rawDist);
+  } else {
+    _dir.set(0, 0, 1);
+  }
+
+  const a = (ARM_UPPER_LEN * ARM_UPPER_LEN - ARM_FORE_LEN * ARM_FORE_LEN + dist * dist) / (2 * dist);
+  const h = Math.sqrt(Math.max(0, ARM_UPPER_LEN * ARM_UPPER_LEN - a * a));
+
+  _perp.copy(pole).addScaledVector(_dir, -pole.dot(_dir));
+  if (_perp.lengthSq() < 1e-5) {
+    _perp.set(0, -1, 0).addScaledVector(_dir, _dir.y);
+  }
+  _perp.normalize();
+
+  outElbow
+    .copy(shoulder)
+    .addScaledVector(_dir, a)
+    .addScaledVector(_perp, h);
+}
 
 // Module-level registry of 3D vehicle groups so Player.tsx can update the driven car's visual transform
 // synchronously in the same frame BEFORE positioning the 1st/3rd person camera (zero 1-frame lag or vibration!)
@@ -81,6 +139,366 @@ function RealisticAlloyWheel({
 }
 
 // ---------------------------------------------------------------------------
+// 1ST-PERSON FULL ARTICULATED ASTRONAUT ARMS (2-BONE IK SHOULDER -> ELBOW -> HAND)
+// Rendered strictly in 1st-person driving mode so arms look continuous,
+// anatomically anchored to the driver's shoulders, and never float!
+// ---------------------------------------------------------------------------
+function FirstPersonCockpitArms({
+  sleeveColor,
+  stripeColor,
+  gloveColor,
+}: {
+  sleeveColor: string;
+  stripeColor: string;
+  gloveColor: string;
+}) {
+  const lUpperRef = useRef<Group>(null);
+  const lForeRef = useRef<Group>(null);
+  const lHandRef = useRef<Group>(null);
+  const rUpperRef = useRef<Group>(null);
+  const rForeRef = useRef<Group>(null);
+  const rHandRef = useRef<Group>(null);
+
+  useFrame(() => {
+    const st = useGameStore.getState();
+    const activeCar = st.drivingCarId ? st.carStates[st.drivingCarId] : null;
+    const liveSteer = activeCar ? activeCar.steer : 0;
+    const wheelRotZ = -liveSteer * 3.4;
+
+    // Anchor wrists slightly behind the outer shoulder of the 0.165m steering torus (tube r = 0.024m)
+    // so scaled human palms cup the outer rim while all 4 fingers + thumb wrap tightly inward around the wheel!
+    _wheelSpinEuler.set(0, 0, wheelRotZ);
+    _gripLocalL.set(0.186, 0.004, -0.022).applyEuler(_wheelSpinEuler).applyEuler(_wheelTiltEuler).add(_wheelCenter);
+    _gripLocalR.set(-0.186, 0.004, -0.022).applyEuler(_wheelSpinEuler).applyEuler(_wheelTiltEuler).add(_wheelCenter);
+
+    _handPosL.copy(_gripLocalL);
+    _handPosR.copy(_gripLocalR);
+
+    solveTwoBoneElbow(_lShoulder, _handPosL, _lPole, _elbowPosL);
+    solveTwoBoneElbow(_rShoulder, _handPosR, _rPole, _elbowPosR);
+
+    // Position Left Upper Arm
+    if (lUpperRef.current) {
+      lUpperRef.current.position.copy(_lShoulder).add(_elbowPosL).multiplyScalar(0.5);
+      _segDir.subVectors(_elbowPosL, _lShoulder).normalize();
+      lUpperRef.current.quaternion.setFromUnitVectors(_yAxis, _segDir);
+    }
+    // Position Left Forearm
+    if (lForeRef.current) {
+      lForeRef.current.position.copy(_elbowPosL).add(_handPosL).multiplyScalar(0.5);
+      _segDir.subVectors(_handPosL, _elbowPosL).normalize();
+      lForeRef.current.quaternion.setFromUnitVectors(_yAxis, _segDir);
+    }
+    // Orient Left Human Hand cleanly upright (+Y = top/thumb side, +Z = forward into knuckles, -X = inward onto rim)
+    if (lHandRef.current) {
+      lHandRef.current.position.copy(_handPosL);
+      _segDir.subVectors(_handPosL, _elbowPosL).normalize();
+      _palmInward.subVectors(_wheelCenter, _handPosL).normalize();
+      _handUp.crossVectors(_palmInward, _segDir).normalize();
+      _handSide.crossVectors(_handUp, _segDir).normalize();
+      _handMat.makeBasis(_handSide, _handUp, _segDir);
+      lHandRef.current.quaternion.setFromRotationMatrix(_handMat);
+    }
+
+    // Position Right Upper Arm
+    if (rUpperRef.current) {
+      rUpperRef.current.position.copy(_rShoulder).add(_elbowPosR).multiplyScalar(0.5);
+      _segDir.subVectors(_elbowPosR, _rShoulder).normalize();
+      rUpperRef.current.quaternion.setFromUnitVectors(_yAxis, _segDir);
+    }
+    // Position Right Forearm
+    if (rForeRef.current) {
+      rForeRef.current.position.copy(_elbowPosR).add(_handPosR).multiplyScalar(0.5);
+      _segDir.subVectors(_handPosR, _elbowPosR).normalize();
+      rForeRef.current.quaternion.setFromUnitVectors(_yAxis, _segDir);
+    }
+    // Orient Right Human Hand cleanly upright (+Y = top/thumb side, +Z = forward into knuckles, +X = inward onto rim)
+    if (rHandRef.current) {
+      rHandRef.current.position.copy(_handPosR);
+      _segDir.subVectors(_handPosR, _elbowPosR).normalize();
+      _palmInward.subVectors(_wheelCenter, _handPosR).normalize();
+      _handUp.crossVectors(_segDir, _palmInward).normalize();
+      _handSide.crossVectors(_handUp, _segDir).normalize();
+      _handMat.makeBasis(_handSide, _handUp, _segDir);
+      rHandRef.current.quaternion.setFromRotationMatrix(_handMat);
+    }
+  });
+
+  const skinBase = '#9e6847';
+  const skinShadow = '#845235';
+  const skinHighlight = '#b37a57';
+  const nailColor = '#dfc0ad';
+
+  const fingerSpecs = [
+    { y: -0.025, len1: 0.020, len2: 0.015, len3: 0.012, r: 0.0064, zOff: 0.032 }, // Mindinho
+    { y: -0.009, len1: 0.024, len2: 0.018, len3: 0.013, r: 0.0070, zOff: 0.036 }, // Anelar
+    { y: 0.009, len1: 0.026, len2: 0.019, len3: 0.014, r: 0.0074, zOff: 0.038 },  // Médio
+    { y: 0.026, len1: 0.023, len2: 0.017, len3: 0.013, r: 0.0072, zOff: 0.035 },  // Indicador
+  ];
+
+  return (
+    <group>
+      {/* LEFT ARM: Shoulder Cuff -> Upper Arm -> Elbow Joint -> Forearm -> Wrist Ring -> Detailed Human Hand */}
+      <mesh position={[_lShoulder.x, _lShoulder.y, _lShoulder.z]}>
+        <sphereGeometry args={[0.062, 14, 14]} />
+        <meshStandardMaterial color={sleeveColor} roughness={0.48} metalness={0.18} />
+      </mesh>
+      <group ref={lUpperRef}>
+        <mesh castShadow>
+          <cylinderGeometry args={[0.052, 0.056, ARM_UPPER_LEN, 16]} />
+          <meshStandardMaterial color={sleeveColor} roughness={0.48} metalness={0.18} />
+        </mesh>
+        <mesh position={[0, 0.02, 0]}>
+          <cylinderGeometry args={[0.056, 0.056, 0.036, 16]} />
+          <meshStandardMaterial color={stripeColor} roughness={0.4} metalness={0.25} />
+        </mesh>
+        <mesh position={[0, ARM_UPPER_LEN * 0.5, 0]}>
+          <sphereGeometry args={[0.051, 14, 14]} />
+          <meshStandardMaterial color="#334155" roughness={0.55} metalness={0.25} />
+        </mesh>
+      </group>
+      <group ref={lForeRef}>
+        <mesh castShadow>
+          <cylinderGeometry args={[0.038, 0.049, ARM_FORE_LEN, 16]} />
+          <meshStandardMaterial color={sleeveColor} roughness={0.48} metalness={0.18} />
+        </mesh>
+        <mesh position={[0, -0.02, 0]}>
+          <cylinderGeometry args={[0.048, 0.049, 0.025, 16]} />
+          <meshStandardMaterial color="#475569" roughness={0.45} metalness={0.35} />
+        </mesh>
+        {/* Inner Rubber Seal Gasket */}
+        <mesh position={[0, ARM_FORE_LEN * 0.43, 0]}>
+          <cylinderGeometry args={[0.036, 0.038, 0.022, 14]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.7} />
+        </mesh>
+        {/* Blue Anodized Wrist Disconnect Ring */}
+        <mesh position={[0, ARM_FORE_LEN * 0.45, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.039, 0.0075, 10, 18]} />
+          <meshStandardMaterial color="#0284c7" metalness={0.92} roughness={0.18} />
+        </mesh>
+      </group>
+      <group ref={lHandRef} scale={[1.38, 1.38, 1.38]}>
+        {/* Tapered Human Wrist */}
+        <mesh position={[0, 0, -0.010]} rotation={[Math.PI / 2, 0, 0]} scale={[0.82, 1.0, 1.05]} castShadow>
+          <cylinderGeometry args={[0.024, 0.027, 0.040, 14]} />
+          <meshStandardMaterial color={skinBase} roughness={0.62} metalness={0.02} />
+        </mesh>
+        {/* Sculpted Anatomical Metacarpal Back & Palm */}
+        <mesh position={[-0.002, 0, 0.017]} scale={[0.44, 0.96, 1.05]} castShadow>
+          <sphereGeometry args={[0.036, 16, 14]} />
+          <meshStandardMaterial color={skinBase} roughness={0.62} metalness={0.02} />
+        </mesh>
+        {/* Thenar Eminence (Thumb Base Muscle Cushion) */}
+        <mesh position={[-0.010, 0.020, 0.012]} rotation={[0.4, -0.2, 0.3]} scale={[0.75, 1.0, 1.2]}>
+          <sphereGeometry args={[0.016, 12, 10]} />
+          <meshStandardMaterial color={skinHighlight} roughness={0.64} metalness={0.02} />
+        </mesh>
+        {/* 4 Articulated 3-Phalanx Fingers Wrapping Cleanly Inward (-X) Around Steering Rim */}
+        {fingerSpecs.map((f, fi) => (
+          <group key={`fp-l-finger-${fi}`} position={[-0.006, f.y, f.zOff]}>
+            {/* Dorsal Metacarpal Knuckle */}
+            <mesh scale={[0.9, 1.0, 1.0]}>
+              <sphereGeometry args={[f.r * 1.15, 10, 10]} />
+              <meshStandardMaterial color={skinShadow} roughness={0.64} metalness={0.02} />
+            </mesh>
+            {/* Proximal Phalanx (curling INWARD -X around front of torus) */}
+            <group rotation={[0, -0.58, 0]}>
+              <mesh position={[0, 0, f.len1 * 0.5]} rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[f.r * 0.92, f.r * 1.05, f.len1, 10]} />
+                <meshStandardMaterial color={skinBase} roughness={0.62} metalness={0.02} />
+              </mesh>
+              <mesh position={[0, 0, f.len1]}>
+                <sphereGeometry args={[f.r * 0.94, 8, 8]} />
+                <meshStandardMaterial color={skinShadow} roughness={0.64} metalness={0.02} />
+              </mesh>
+              {/* Middle Phalanx (hugging front/inner curve of wheel rim) */}
+              <group position={[0, 0, f.len1]} rotation={[0, -1.06, 0]}>
+                <mesh position={[0, 0, f.len2 * 0.5]} rotation={[Math.PI / 2, 0, 0]}>
+                  <cylinderGeometry args={[f.r * 0.84, f.r * 0.92, f.len2, 10]} />
+                  <meshStandardMaterial color={skinBase} roughness={0.60} metalness={0.02} />
+                </mesh>
+                <mesh position={[0, 0, f.len2]}>
+                  <sphereGeometry args={[f.r * 0.85, 8, 8]} />
+                  <meshStandardMaterial color={skinShadow} roughness={0.64} metalness={0.02} />
+                </mesh>
+                {/* Distal Phalanx + Fingertip + Nail pressing into inner wheel rim */}
+                <group position={[0, 0, f.len2]} rotation={[0, -0.94, 0]}>
+                  <mesh position={[0, 0, f.len3 * 0.48]} rotation={[Math.PI / 2, 0, 0]}>
+                    <cylinderGeometry args={[f.r * 0.72, f.r * 0.84, f.len3, 10]} />
+                    <meshStandardMaterial color={skinHighlight} roughness={0.60} metalness={0.02} />
+                  </mesh>
+                  <mesh position={[0, 0, f.len3 * 0.95]}>
+                    <sphereGeometry args={[f.r * 0.74, 8, 8]} />
+                    <meshStandardMaterial color={skinHighlight} roughness={0.65} metalness={0.01} />
+                  </mesh>
+                  <mesh position={[f.r * 0.58, 0, f.len3 * 0.74]} rotation={[0, Math.PI / 2, 0]} scale={[0.75, 0.68, 1]}>
+                    <cylinderGeometry args={[f.r * 0.65, f.r * 0.65, 0.0022, 8]} />
+                    <meshStandardMaterial color={nailColor} roughness={0.38} metalness={0.05} />
+                  </mesh>
+                </group>
+              </group>
+            </group>
+          </group>
+        ))}
+        {/* Opposable Left Human Thumb Wrapping Inward Over Upper/Inner Rim */}
+        <group position={[-0.014, 0.030, 0.016]} rotation={[0.55, -0.42, 0.48]}>
+          <mesh position={[0, 0.013, 0]}>
+            <cylinderGeometry args={[0.0082, 0.0096, 0.026, 10]} />
+            <meshStandardMaterial color={skinBase} roughness={0.62} metalness={0.02} />
+          </mesh>
+          <mesh position={[0, 0.026, 0]}>
+            <sphereGeometry args={[0.0084, 8, 8]} />
+            <meshStandardMaterial color={skinShadow} roughness={0.64} metalness={0.02} />
+          </mesh>
+          <group position={[0, 0.026, 0]} rotation={[0.35, -0.22, 0.20]}>
+            <mesh position={[0, 0.011, 0]}>
+              <cylinderGeometry args={[0.0070, 0.0082, 0.022, 10]} />
+              <meshStandardMaterial color={skinHighlight} roughness={0.60} metalness={0.02} />
+            </mesh>
+            <mesh position={[0, 0.022, 0]}>
+              <sphereGeometry args={[0.0072, 8, 8]} />
+              <meshStandardMaterial color={skinHighlight} roughness={0.65} metalness={0.01} />
+            </mesh>
+            <mesh position={[0.0052, 0.016, 0]} rotation={[0, 0, Math.PI / 2]} scale={[0.74, 0.7, 1]}>
+              <cylinderGeometry args={[0.0050, 0.0050, 0.0022, 8]} />
+              <meshStandardMaterial color={nailColor} roughness={0.38} metalness={0.05} />
+            </mesh>
+          </group>
+        </group>
+      </group>
+
+      {/* RIGHT ARM: Shoulder Cuff -> Upper Arm -> Elbow Joint -> Forearm -> Wrist Ring -> Detailed Human Hand */}
+      <mesh position={[_rShoulder.x, _rShoulder.y, _rShoulder.z]}>
+        <sphereGeometry args={[0.062, 14, 14]} />
+        <meshStandardMaterial color={sleeveColor} roughness={0.48} metalness={0.18} />
+      </mesh>
+      <group ref={rUpperRef}>
+        <mesh castShadow>
+          <cylinderGeometry args={[0.052, 0.056, ARM_UPPER_LEN, 16]} />
+          <meshStandardMaterial color={sleeveColor} roughness={0.48} metalness={0.18} />
+        </mesh>
+        <mesh position={[0, 0.02, 0]}>
+          <cylinderGeometry args={[0.056, 0.056, 0.036, 16]} />
+          <meshStandardMaterial color={stripeColor} roughness={0.4} metalness={0.25} />
+        </mesh>
+        <mesh position={[0, ARM_UPPER_LEN * 0.5, 0]}>
+          <sphereGeometry args={[0.051, 14, 14]} />
+          <meshStandardMaterial color="#334155" roughness={0.55} metalness={0.25} />
+        </mesh>
+      </group>
+      <group ref={rForeRef}>
+        <mesh castShadow>
+          <cylinderGeometry args={[0.038, 0.049, ARM_FORE_LEN, 16]} />
+          <meshStandardMaterial color={sleeveColor} roughness={0.48} metalness={0.18} />
+        </mesh>
+        <mesh position={[0, -0.02, 0]}>
+          <cylinderGeometry args={[0.048, 0.049, 0.025, 16]} />
+          <meshStandardMaterial color="#475569" roughness={0.45} metalness={0.35} />
+        </mesh>
+        <mesh position={[0, ARM_FORE_LEN * 0.43, 0]}>
+          <cylinderGeometry args={[0.036, 0.038, 0.022, 14]} />
+          <meshStandardMaterial color="#1e293b" roughness={0.7} />
+        </mesh>
+        {/* Red Anodized Wrist Disconnect Ring */}
+        <mesh position={[0, ARM_FORE_LEN * 0.45, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.039, 0.0075, 10, 18]} />
+          <meshStandardMaterial color="#dc2626" metalness={0.92} roughness={0.18} />
+        </mesh>
+      </group>
+      <group ref={rHandRef} scale={[1.38, 1.38, 1.38]}>
+        {/* Tapered Human Wrist */}
+        <mesh position={[0, 0, -0.010]} rotation={[Math.PI / 2, 0, 0]} scale={[0.82, 1.0, 1.05]} castShadow>
+          <cylinderGeometry args={[0.024, 0.027, 0.040, 14]} />
+          <meshStandardMaterial color={skinBase} roughness={0.62} metalness={0.02} />
+        </mesh>
+        {/* Sculpted Anatomical Metacarpal Back & Palm */}
+        <mesh position={[0.002, 0, 0.017]} scale={[0.44, 0.96, 1.05]} castShadow>
+          <sphereGeometry args={[0.036, 16, 14]} />
+          <meshStandardMaterial color={skinBase} roughness={0.62} metalness={0.02} />
+        </mesh>
+        {/* Thenar Eminence */}
+        <mesh position={[0.010, 0.020, 0.012]} rotation={[0.4, 0.2, -0.3]} scale={[0.75, 1.0, 1.2]}>
+          <sphereGeometry args={[0.016, 12, 10]} />
+          <meshStandardMaterial color={skinHighlight} roughness={0.64} metalness={0.02} />
+        </mesh>
+        {/* 4 Articulated 3-Phalanx Fingers Wrapping Cleanly Inward (+X) Around Steering Rim */}
+        {fingerSpecs.map((f, fi) => (
+          <group key={`fp-r-finger-${fi}`} position={[0.006, f.y, f.zOff]}>
+            {/* Dorsal Metacarpal Knuckle */}
+            <mesh scale={[0.9, 1.0, 1.0]}>
+              <sphereGeometry args={[f.r * 1.15, 10, 10]} />
+              <meshStandardMaterial color={skinShadow} roughness={0.64} metalness={0.02} />
+            </mesh>
+            {/* Proximal Phalanx (curling INWARD +X around front of torus) */}
+            <group rotation={[0, 0.58, 0]}>
+              <mesh position={[0, 0, f.len1 * 0.5]} rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[f.r * 0.92, f.r * 1.05, f.len1, 10]} />
+                <meshStandardMaterial color={skinBase} roughness={0.62} metalness={0.02} />
+              </mesh>
+              <mesh position={[0, 0, f.len1]}>
+                <sphereGeometry args={[f.r * 0.94, 8, 8]} />
+                <meshStandardMaterial color={skinShadow} roughness={0.64} metalness={0.02} />
+              </mesh>
+              {/* Middle Phalanx */}
+              <group position={[0, 0, f.len1]} rotation={[0, 1.06, 0]}>
+                <mesh position={[0, 0, f.len2 * 0.5]} rotation={[Math.PI / 2, 0, 0]}>
+                  <cylinderGeometry args={[f.r * 0.84, f.r * 0.92, f.len2, 10]} />
+                  <meshStandardMaterial color={skinBase} roughness={0.60} metalness={0.02} />
+                </mesh>
+                <mesh position={[0, 0, f.len2]}>
+                  <sphereGeometry args={[f.r * 0.85, 8, 8]} />
+                  <meshStandardMaterial color={skinShadow} roughness={0.64} metalness={0.02} />
+                </mesh>
+                {/* Distal Phalanx + Fingertip + Nail */}
+                <group position={[0, 0, f.len2]} rotation={[0, 0.94, 0]}>
+                  <mesh position={[0, 0, f.len3 * 0.48]} rotation={[Math.PI / 2, 0, 0]}>
+                    <cylinderGeometry args={[f.r * 0.72, f.r * 0.84, f.len3, 10]} />
+                    <meshStandardMaterial color={skinHighlight} roughness={0.60} metalness={0.02} />
+                  </mesh>
+                  <mesh position={[0, 0, f.len3 * 0.95]}>
+                    <sphereGeometry args={[f.r * 0.74, 8, 8]} />
+                    <meshStandardMaterial color={skinHighlight} roughness={0.65} metalness={0.01} />
+                  </mesh>
+                  <mesh position={[-f.r * 0.58, 0, f.len3 * 0.74]} rotation={[0, -Math.PI / 2, 0]} scale={[0.75, 0.68, 1]}>
+                    <cylinderGeometry args={[f.r * 0.65, f.r * 0.65, 0.0022, 8]} />
+                    <meshStandardMaterial color={nailColor} roughness={0.38} metalness={0.05} />
+                  </mesh>
+                </group>
+              </group>
+            </group>
+          </group>
+        ))}
+        {/* Opposable Right Human Thumb Wrapping Inward Over Upper/Inner Rim */}
+        <group position={[0.014, 0.030, 0.016]} rotation={[0.55, 0.42, -0.48]}>
+          <mesh position={[0, 0.013, 0]}>
+            <cylinderGeometry args={[0.0082, 0.0096, 0.026, 10]} />
+            <meshStandardMaterial color={skinBase} roughness={0.62} metalness={0.02} />
+          </mesh>
+          <mesh position={[0, 0.026, 0]}>
+            <sphereGeometry args={[0.0084, 8, 8]} />
+            <meshStandardMaterial color={skinShadow} roughness={0.64} metalness={0.02} />
+          </mesh>
+          <group position={[0, 0.026, 0]} rotation={[0.35, 0.22, -0.20]}>
+            <mesh position={[0, 0.011, 0]}>
+              <cylinderGeometry args={[0.0070, 0.0082, 0.022, 10]} />
+              <meshStandardMaterial color={skinHighlight} roughness={0.60} metalness={0.02} />
+            </mesh>
+            <mesh position={[0, 0.022, 0]}>
+              <sphereGeometry args={[0.0072, 8, 8]} />
+              <meshStandardMaterial color={skinHighlight} roughness={0.65} metalness={0.01} />
+            </mesh>
+            <mesh position={[-0.0052, 0.016, 0]} rotation={[0, 0, Math.PI / 2]} scale={[0.74, 0.7, 1]}>
+              <cylinderGeometry args={[0.0050, 0.0050, 0.0022, 8]} />
+              <meshStandardMaterial color={nailColor} roughness={0.38} metalness={0.05} />
+            </mesh>
+          </group>
+        </group>
+      </group>
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // DETAILED 3D CAR COCKPIT INTERIOR (STEERING WHEEL, DASHBOARD, SEATS, GLASS)
 // Visible in both 1st-Person Cockpit View and 3rd-Person Exterior View!
 // ---------------------------------------------------------------------------
@@ -100,8 +518,11 @@ function CarCockpitInterior({
   isDriven?: boolean;
 }) {
   const suitStyle = useGameStore((s) => s.suitStyle);
+  const cameraMode = useGameStore((s) => s.cameraMode);
   const sleeveColor =
     suitStyle === 'orange' ? '#ea580c' : suitStyle === 'carbon' ? '#18181b' : '#f1f5f9';
+  const stripeColor =
+    suitStyle === 'orange' ? '#ffffff' : suitStyle === 'carbon' ? '#eab308' : '#dc2626';
   const gloveColor =
     suitStyle === 'orange' ? '#1c1917' : suitStyle === 'carbon' ? '#27272a' : '#1e293b';
   const steeringWheelGroupRef = useRef<Group>(null);
@@ -272,76 +693,17 @@ function CarCockpitInterior({
             <boxGeometry args={[0.032, 0.11, 0.016]} />
             <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.2} />
           </mesh>
-
-          {/* 3D Astronaut EVA Pressure Gloves & Forearm Cuffs Locked onto 9-O'Clock (+X Left) & 3-O'Clock (-X Right) Steering Rim! */}
-          {/* Visible in BOTH 1st-Person Cockpit View and 3rd-Person Exterior View when driving! */}
-          {isDriven && (
-            <>
-              {/* LEFT HAND (9-O'Clock: +X = +0.162) */}
-              <group position={[0.162, 0.015, -0.008]} rotation={[0.12, -0.18, 0.08]}>
-                {/* Gloved Palm & Back of Hand Gripping Rim */}
-                <mesh castShadow>
-                  <boxGeometry args={[0.058, 0.078, 0.058]} />
-                  <meshStandardMaterial color={gloveColor} roughness={0.45} metalness={0.25} />
-                </mesh>
-                {/* Wrapped EVA Fingers around Outer Rim */}
-                {[-0.022, -0.007, 0.008, 0.023].map((fy, fi) => (
-                  <mesh key={`l-finger-${fi}`} position={[0.012, fy, 0.022]} rotation={[0, 0, 0.35]}>
-                    <cylinderGeometry args={[0.0085, 0.008, 0.042, 8]} />
-                    <meshStandardMaterial color="#64748b" roughness={0.4} metalness={0.3} />
-                  </mesh>
-                ))}
-                {/* Thumb Hooked over Inner Spoke */}
-                <mesh position={[-0.028, 0.026, -0.006]} rotation={[0, 0, -0.65]}>
-                  <cylinderGeometry args={[0.010, 0.009, 0.044, 8]} />
-                  <meshStandardMaterial color={gloveColor} roughness={0.45} />
-                </mesh>
-                {/* NASA Blue Anodized Wrist Disconnect Ring */}
-                <mesh position={[0.008, -0.018, -0.046]} rotation={[Math.PI / 2 - 0.25, 0.12, 0]}>
-                  <torusGeometry args={[0.032, 0.007, 10, 18]} />
-                  <meshStandardMaterial color="#0284c7" metalness={0.92} roughness={0.18} />
-                </mesh>
-                {/* Pressurized Spacesuit Forearm Sleeve Cuff Extending Toward Driver */}
-                <mesh position={[0.018, -0.048, -0.115]} rotation={[Math.PI / 2 - 0.28, 0.14, 0]} castShadow>
-                  <cylinderGeometry args={[0.036, 0.044, 0.14, 14]} />
-                  <meshStandardMaterial color={sleeveColor} roughness={0.5} metalness={0.15} />
-                </mesh>
-              </group>
-
-              {/* RIGHT HAND (3-O'Clock: -X = -0.162) */}
-              <group position={[-0.162, 0.015, -0.008]} rotation={[0.12, 0.18, -0.08]}>
-                {/* Gloved Palm & Back of Hand Gripping Rim */}
-                <mesh castShadow>
-                  <boxGeometry args={[0.058, 0.078, 0.058]} />
-                  <meshStandardMaterial color={gloveColor} roughness={0.45} metalness={0.25} />
-                </mesh>
-                {/* Wrapped EVA Fingers around Outer Rim */}
-                {[-0.022, -0.007, 0.008, 0.023].map((fy, fi) => (
-                  <mesh key={`r-finger-${fi}`} position={[-0.012, fy, 0.022]} rotation={[0, 0, -0.35]}>
-                    <cylinderGeometry args={[0.0085, 0.008, 0.042, 8]} />
-                    <meshStandardMaterial color="#64748b" roughness={0.4} metalness={0.3} />
-                  </mesh>
-                ))}
-                {/* Thumb Hooked over Inner Spoke */}
-                <mesh position={[0.028, 0.026, -0.006]} rotation={[0, 0, 0.65]}>
-                  <cylinderGeometry args={[0.010, 0.009, 0.044, 8]} />
-                  <meshStandardMaterial color={gloveColor} roughness={0.45} />
-                </mesh>
-                {/* NASA Red Anodized Wrist Disconnect Ring */}
-                <mesh position={[-0.008, -0.018, -0.046]} rotation={[Math.PI / 2 - 0.25, -0.12, 0]}>
-                  <torusGeometry args={[0.032, 0.007, 10, 18]} />
-                  <meshStandardMaterial color="#dc2626" metalness={0.92} roughness={0.18} />
-                </mesh>
-                {/* Pressurized Spacesuit Forearm Sleeve Cuff Extending Toward Driver */}
-                <mesh position={[-0.018, -0.048, -0.115]} rotation={[Math.PI / 2 - 0.28, -0.14, 0]} castShadow>
-                  <cylinderGeometry args={[0.036, 0.044, 0.14, 14]} />
-                  <meshStandardMaterial color={sleeveColor} roughness={0.5} metalness={0.15} />
-                </mesh>
-              </group>
-            </>
-          )}
         </group>
       </group>
+
+      {/* Continuous Articulated Spacesuit Arms strictly for 1st-Person Cockpit View (3rd-Person uses AstronautCharacter's own arms!) */}
+      {isDriven && cameraMode === 'first' && (
+        <FirstPersonCockpitArms
+          sleeveColor={sleeveColor}
+          stripeColor={stripeColor}
+          gloveColor={gloveColor}
+        />
+      )}
     </group>
   );
 }

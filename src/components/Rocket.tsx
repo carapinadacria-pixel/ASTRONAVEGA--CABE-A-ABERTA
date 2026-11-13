@@ -7,6 +7,7 @@ import { RocketModel } from './RocketModel';
 import { PlanetaryCapsuleLander } from './PlanetaryCapsuleLander';
 import { LaunchPadStairs } from './LaunchPadStairs';
 import { Text } from '@react-three/drei';
+import { playCountdownVoice, playRocketFlameoutSound, playRocketSeaCrashSound } from '../audio';
 
 const _rocketWorldPos = new Vector3();
 const _camTargetPos = new Vector3();
@@ -17,6 +18,7 @@ export function Rocket() {
   const isLaunching = useGameStore((state) => state.isLaunching);
   const isNearRocket = useGameStore((state) => state.isNearRocket);
   const planetIndex = useGameStore((state) => state.planetIndex);
+  const rocketFuel = useGameStore((state) => state.rocketFuel);
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
   const isEarth = currentPlanet.type === 'earth';
 
@@ -30,12 +32,19 @@ export function Rocket() {
   const umbilicalArm2Ref = useRef<Group>(null);
   const umbilicalArm3Ref = useRef<Group>(null);
 
-  // Countdown (5 -> 0), Velocity (m/s), and Fuel (%) state refs for Earth Launch Sequence
+  // Countdown (5 -> 0), Velocity (m/s), Fuel (%) and Crash Physics refs
   const countdownRef = useRef<number>(5.0);
   const velocityRef = useRef<number>(0);
-  const fuelRef = useRef<number>(100);
+  const horizVelXRef = useRef<number>(0);
+  const fuelRef = useRef<number>(0);
+  const initialLaunchFuelRef = useRef<number>(0);
+  const lastSpokenStepRef = useRef<5 | 4 | 3 | 2 | 1 | 'liftoff' | null>(null);
+  const flightPhaseRef = useRef<'countdown' | 'liftoff' | 'flameout' | 'crashed'>('countdown');
+  const crashHoldTimerRef = useRef<number>(0);
+  const hasInitializedLaunchRef = useRef<boolean>(false);
   const lastTelemetrySyncRef = useRef<number>(0);
   const [engineIgnited, setEngineIgnited] = React.useState(false);
+  const [crashSplashPos, setCrashSplashPos] = React.useState<[number, number, number] | null>(null);
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
@@ -43,12 +52,38 @@ export function Rocket() {
 
     if (isLaunching) {
       if (isEarth) {
+        // One-time initialization on launch start (even if triggered via [R], touch, or HUD button)
+        if (!hasInitializedLaunchRef.current) {
+          const loadedFuel = useGameStore.getState().rocketFuel;
+          if (loadedFuel <= 0) {
+            setLaunching(false);
+            useGameStore.getState().setLaunchFailureMsg('Foguete sem combustível (0%)! Abasteça no painel antes de descolar.');
+            return;
+          }
+          hasInitializedLaunchRef.current = true;
+          initialLaunchFuelRef.current = loadedFuel;
+          fuelRef.current = loadedFuel;
+          countdownRef.current = 5.0;
+          velocityRef.current = 0;
+          horizVelXRef.current = 0;
+          flightPhaseRef.current = 'countdown';
+          crashHoldTimerRef.current = 0;
+          lastSpokenStepRef.current = 5;
+          setCrashSplashPos(null);
+          playCountdownVoice(5);
+        }
+
         // PHASE 1: T-5 TO T-0 COUNTDOWN ON PAD BEFORE LIFTOFF
         if (countdownRef.current > 0) {
           countdownRef.current = Math.max(0, countdownRef.current - delta);
           const displayCount = Math.ceil(countdownRef.current);
 
-          // Main engine pre-ignition at T-2s while hold-down clamps keep rocket anchored
+          if (displayCount >= 1 && displayCount <= 5 && lastSpokenStepRef.current !== displayCount) {
+            lastSpokenStepRef.current = displayCount as 5 | 4 | 3 | 2 | 1;
+            playCountdownVoice(lastSpokenStepRef.current);
+          }
+
+          // Main engine pre-ignition at T-2.2s while hold-down clamps keep rocket anchored
           const isPreIgnition = countdownRef.current <= 2.2;
           if (isPreIgnition !== engineIgnited) {
             setEngineIgnited(isPreIgnition);
@@ -72,10 +107,12 @@ export function Rocket() {
             umbilicalArm3Ref.current.rotation.y = MathUtils.lerp(umbilicalArm3Ref.current.rotation.y, -Math.PI / 3.2, delta * 1.7);
           }
 
-          // Pre-ignition fuel flow (100% -> 98%)
-          fuelRef.current = isPreIgnition ? 98 + (countdownRef.current / 2.2) * 2 : 100;
+          // Subtle pre-ignition boil-off
+          const startFuel = initialLaunchFuelRef.current;
+          const boilOff = isPreIgnition ? ((2.2 - countdownRef.current) / 2.2) * Math.min(1.5, startFuel * 0.05) : 0;
+          fuelRef.current = Math.max(0, startFuel - boilOff);
 
-          // Sync HUD telemetry
+          // Sync HUD telemetry (including Rocket Weight in tons)
           if (state.clock.elapsedTime - lastTelemetrySyncRef.current > 0.08 || countdownRef.current === 0) {
             lastTelemetrySyncRef.current = state.clock.elapsedTime;
             useGameStore.getState().setLaunchTelemetry({
@@ -83,6 +120,7 @@ export function Rocket() {
               fuel: Math.round(fuelRef.current),
               speed: 0,
               altitude: 0,
+              weightTons: Math.round(420 + fuelRef.current * 25.5),
               status: 'countdown',
             });
           }
@@ -93,8 +131,11 @@ export function Rocket() {
           state.camera.position.lerp(_camTargetPos, 0.08);
           state.camera.lookAt(_rocketWorldPos.x, _rocketWorldPos.y + 22, _rocketWorldPos.z);
         } else {
-          // PHASE 2: T-0 LIFTOFF! RELEASE HOLD-DOWN CLAMPS & ASCEND WITH FUEL BURN AND VELOCITY
-          if (!engineIgnited) setEngineIgnited(true);
+          // PHASE 2: T-0 LIFTOFF! RELEASE HOLD-DOWN CLAMPS
+          if (lastSpokenStepRef.current !== 'liftoff') {
+            lastSpokenStepRef.current = 'liftoff';
+            playCountdownVoice('liftoff');
+          }
 
           const openAngle = Math.PI / 3.5;
           if (clampLeftRef.current) clampLeftRef.current.rotation.z = MathUtils.lerp(clampLeftRef.current.rotation.z, -openAngle, 0.14);
@@ -102,32 +143,137 @@ export function Rocket() {
           if (clampFrontRef.current) clampFrontRef.current.rotation.x = MathUtils.lerp(clampFrontRef.current.rotation.x, openAngle, 0.14);
           if (clampBackRef.current) clampBackRef.current.rotation.x = MathUtils.lerp(clampBackRef.current.rotation.x, -openAngle, 0.14);
 
-          // Progressive thrust acceleration (0 -> 450 m/s)
-          velocityRef.current = Math.min(450, velocityRef.current + delta * 105);
-          rocketRef.current.position.y += velocityRef.current * delta;
+          const hasSufficientFuelForOrbit = initialLaunchFuelRef.current >= 85;
 
-          const currentAlt = Math.max(0, rocketRef.current.position.y - 4.2);
-          fuelRef.current = Math.max(16, 98 - (currentAlt / 650) * 82);
+          if (hasSufficientFuelForOrbit) {
+            // SAFE ORBITAL ASCENT (>= 85% fuel)
+            if (!engineIgnited) setEngineIgnited(true);
+            flightPhaseRef.current = 'liftoff';
 
-          if (state.clock.elapsedTime - lastTelemetrySyncRef.current > 0.08) {
-            lastTelemetrySyncRef.current = state.clock.elapsedTime;
-            useGameStore.getState().setLaunchTelemetry({
-              countdown: 0,
-              fuel: Math.round(fuelRef.current),
-              speed: Math.round(velocityRef.current),
-              altitude: Math.round(currentAlt),
-              status: 'liftoff',
-            });
-          }
+            velocityRef.current = Math.min(450, velocityRef.current + delta * 105);
+            rocketRef.current.position.y += velocityRef.current * delta;
 
-          // Lock camera smoothly to ascending rocket
-          rocketRef.current.getWorldPosition(_rocketWorldPos);
-          _camTargetPos.set(_rocketWorldPos.x + 35, _rocketWorldPos.y + 15, _rocketWorldPos.z + 45);
-          state.camera.position.lerp(_camTargetPos, 0.08);
-          state.camera.lookAt(_rocketWorldPos);
+            const currentAlt = Math.max(0, rocketRef.current.position.y - 4.2);
+            const startF = initialLaunchFuelRef.current;
+            fuelRef.current = Math.max(8, startF - (currentAlt / 650) * (startF - 12));
 
-          if (rocketRef.current.position.y > 650) {
-            changePlanet(); // Transition to space
+            if (state.clock.elapsedTime - lastTelemetrySyncRef.current > 0.08) {
+              lastTelemetrySyncRef.current = state.clock.elapsedTime;
+              useGameStore.getState().setLaunchTelemetry({
+                countdown: 0,
+                fuel: Math.round(fuelRef.current),
+                speed: Math.round(Math.abs(velocityRef.current) * 3.6),
+                altitude: Math.round(currentAlt),
+                weightTons: Math.round(420 + fuelRef.current * 25.5),
+                status: 'liftoff',
+              });
+            }
+
+            rocketRef.current.getWorldPosition(_rocketWorldPos);
+            _camTargetPos.set(_rocketWorldPos.x + 35, _rocketWorldPos.y + 15, _rocketWorldPos.z + 45);
+            state.camera.position.lerp(_camTargetPos, 0.08);
+            state.camera.lookAt(_rocketWorldPos);
+
+            if (rocketRef.current.position.y > 650) {
+              hasInitializedLaunchRef.current = false;
+              changePlanet(); // Transition safely to orbit
+            }
+          } else {
+            // INSUFFICIENT FUEL (1% - 84%): SHORT ASCENT -> FLAMEOUT -> PITCH WEST INTO OCEAN -> DEATH & HANGAR RESPAWN
+            const maxBurnAlt = 42 + (initialLaunchFuelRef.current / 84) * 230;
+
+            if (flightPhaseRef.current === 'countdown') {
+              flightPhaseRef.current = 'liftoff';
+            }
+
+            if (flightPhaseRef.current === 'liftoff') {
+              if (!engineIgnited) setEngineIgnited(true);
+
+              velocityRef.current = Math.min(185, velocityRef.current + delta * 68);
+              rocketRef.current.position.y += velocityRef.current * delta;
+              // Arc gently West (-X) toward the Atlantic Ocean
+              horizVelXRef.current = MathUtils.lerp(horizVelXRef.current, -24, delta * 0.9);
+              rocketRef.current.position.x += horizVelXRef.current * delta;
+              rocketRef.current.rotation.z = MathUtils.lerp(rocketRef.current.rotation.z, 0.36, delta * 1.1);
+
+              const currentAlt = Math.max(0, rocketRef.current.position.y - 4.2);
+              const burnFrac = Math.min(1, currentAlt / maxBurnAlt);
+              fuelRef.current = Math.max(0, initialLaunchFuelRef.current * (1 - burnFrac));
+
+              if (fuelRef.current <= 0.25 || currentAlt >= maxBurnAlt) {
+                fuelRef.current = 0;
+                flightPhaseRef.current = 'flameout';
+                setEngineIgnited(false);
+                useGameStore.getState().setRocketFuel(0);
+                playRocketFlameoutSound();
+              }
+            } else if (flightPhaseRef.current === 'flameout') {
+              if (engineIgnited) setEngineIgnited(false);
+              fuelRef.current = 0;
+
+              // Ballistic gravity drop & nose-down tumble toward ocean water (X < -34)
+              velocityRef.current -= 52 * delta;
+              const neededXVel = rocketRef.current.position.x > -48 ? -38 : -18;
+              horizVelXRef.current = MathUtils.lerp(horizVelXRef.current, neededXVel, delta * 2.4);
+              rocketRef.current.position.x += horizVelXRef.current * delta;
+              rocketRef.current.position.y += velocityRef.current * delta;
+              rocketRef.current.rotation.z = MathUtils.lerp(rocketRef.current.rotation.z, 2.35, delta * 1.65);
+
+              if (rocketRef.current.position.y <= 0.8) {
+                rocketRef.current.position.y = 0.8;
+                if (rocketRef.current.position.x > -36) {
+                  rocketRef.current.position.x = -42;
+                }
+                flightPhaseRef.current = 'crashed';
+                crashHoldTimerRef.current = 0;
+                velocityRef.current = 0;
+                horizVelXRef.current = 0;
+                setCrashSplashPos([rocketRef.current.position.x, 0.4, rocketRef.current.position.z]);
+                playRocketSeaCrashSound();
+
+                useGameStore.getState().setLaunchTelemetry({
+                  countdown: 0,
+                  fuel: 0,
+                  speed: 0,
+                  altitude: 0,
+                  weightTons: 420,
+                  status: 'crashed',
+                });
+              }
+            } else if (flightPhaseRef.current === 'crashed') {
+              // Submerging rocket tip in sea spray during impact hold
+              rocketRef.current.position.y = Math.max(-6, rocketRef.current.position.y - delta * 3.5);
+              crashHoldTimerRef.current += delta;
+
+              if (crashHoldTimerRef.current >= 1.7) {
+                setCrashSplashPos(null);
+                hasInitializedLaunchRef.current = false;
+                rocketRef.current.position.set(0, 4.2, 0);
+                rocketRef.current.rotation.set(0, 0, 0);
+                useGameStore.getState().triggerRocketCrashRespawn();
+                return;
+              }
+            }
+
+            if (flightPhaseRef.current !== 'crashed' && state.clock.elapsedTime - lastTelemetrySyncRef.current > 0.08) {
+              lastTelemetrySyncRef.current = state.clock.elapsedTime;
+              const currentAlt = Math.max(0, rocketRef.current.position.y - 4.2);
+              const totalSpeedKmh = Math.round(Math.hypot(velocityRef.current, horizVelXRef.current) * 3.6);
+              useGameStore.getState().setLaunchTelemetry({
+                countdown: 0,
+                fuel: Math.round(fuelRef.current),
+                speed: totalSpeedKmh,
+                altitude: Math.round(currentAlt),
+                weightTons: Math.round(420 + fuelRef.current * 25.5),
+                status: flightPhaseRef.current === 'flameout' ? 'flameout' : 'liftoff',
+              });
+            }
+
+            // Track falling/crashing rocket dramatically over the ocean
+            rocketRef.current.getWorldPosition(_rocketWorldPos);
+            _camTargetPos.set(_rocketWorldPos.x + 28, Math.max(10, _rocketWorldPos.y + 14), _rocketWorldPos.z + 42);
+            state.camera.position.lerp(_camTargetPos, 0.1);
+            state.camera.lookAt(_rocketWorldPos.x, Math.max(1, _rocketWorldPos.y), _rocketWorldPos.z);
           }
         }
       } else {
@@ -143,6 +289,7 @@ export function Rocket() {
         }
       }
     } else {
+      hasInitializedLaunchRef.current = false;
       if (isEarth) {
         if (clampLeftRef.current) clampLeftRef.current.rotation.z = 0;
         if (clampRightRef.current) clampRightRef.current.rotation.z = 0;
@@ -153,12 +300,17 @@ export function Rocket() {
         if (umbilicalArm2Ref.current) umbilicalArm2Ref.current.rotation.y = 0;
         if (umbilicalArm3Ref.current) umbilicalArm3Ref.current.rotation.y = 0;
         if (engineIgnited) setEngineIgnited(false);
+        if (crashSplashPos) setCrashSplashPos(null);
 
         countdownRef.current = 5.0;
         velocityRef.current = 0;
-        fuelRef.current = 100;
+        horizVelXRef.current = 0;
+        fuelRef.current = useGameStore.getState().rocketFuel;
 
-        // Subtle pre-launch vibration on pad
+        // Subtle pre-launch idle vibration on pad; guarantee upright pad alignment
+        rocketRef.current.position.x = 0;
+        rocketRef.current.position.z = 0;
+        rocketRef.current.rotation.set(0, 0, 0);
         rocketRef.current.position.y = 4.2 + Math.sin(state.clock.elapsedTime * 1.5) * 0.02;
       } else {
         // Planetary lander resting firmly with its 4 footpads seated on the ground (Y = 0.0)!
@@ -169,17 +321,26 @@ export function Rocket() {
 
   const handleLaunch = () => {
     // Astronaut must be near the rocket to board/launch
-    if (!isLaunching && useGameStore.getState().isNearRocket) {
+    const st = useGameStore.getState();
+    if (!isLaunching && st.isNearRocket) {
       if (isEarth) {
+        if (st.rocketFuel <= 0) {
+          st.setLaunchFailureMsg('Foguete sem combustível (0%)! Abasteça no painel antes de lançar.');
+          return;
+        }
+        const f = st.rocketFuel;
         countdownRef.current = 5.0;
         velocityRef.current = 0;
-        fuelRef.current = 100;
+        horizVelXRef.current = 0;
+        fuelRef.current = f;
         setEngineIgnited(false);
-        useGameStore.getState().setLaunchTelemetry({
+        st.setLaunchFailureMsg(null);
+        st.setLaunchTelemetry({
           countdown: 5,
-          fuel: 100,
+          fuel: Math.round(f),
           speed: 0,
           altitude: 0,
+          weightTons: Math.round(420 + f * 25.5),
           status: 'countdown',
         });
       }
@@ -191,51 +352,14 @@ export function Rocket() {
   if (!isEarth) {
     return (
       <group position={[0, 0, 0]}>
-        {/* Boarding Access Stairway & Ramp leading from ground (Y = 0) up to the Lander Deck (Y = 1.85m) */}
-        <group position={[0, 0, 4.8]}>
-          <RigidBody type="fixed" colliders={false} friction={0.0}>
-            {/* Smooth climbing ramp onto lander stage */}
-            <CuboidCollider
-              args={[1.35, 0.08, 2.1]}
-              position={[0, 0.92, 0]}
-              rotation={[-0.44, 0, 0]}
-              friction={0.0}
-            />
-            {/* Landing threshold at top of ramp flush with deck Y = 1.82 */}
-            <CuboidCollider args={[1.4, 0.1, 0.9]} position={[0, 1.82, -1.6]} friction={0.0} />
-          </RigidBody>
-
-          {/* Angled Metal Stairs Mesh with Structural Side Stringers */}
-          <mesh position={[0, 0.92, 0]} rotation={[-0.44, 0, 0]} receiveShadow castShadow>
-            <boxGeometry args={[2.5, 0.12, 4.2]} />
-            <meshStandardMaterial color="#475569" metalness={0.8} roughness={0.3} />
-          </mesh>
-          {[-1.28, 1.28].map((sx, si) => (
-            <mesh key={`lander-stringer-${si}`} position={[sx, 0.90, 0]} rotation={[-0.44, 0, 0]} castShadow>
-              <boxGeometry args={[0.12, 0.24, 4.3]} />
-              <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
-            </mesh>
-          ))}
-
-          {/* High-Visibility Yellow Handrails */}
-          {[-1.3, 1.3].map((hx, hi) => (
-            <group key={`lander-rail-${hi}`} position={[hx, 1.48, 0]} rotation={[-0.44, 0, 0]}>
-              <mesh>
-                <boxGeometry args={[0.06, 0.06, 4.2]} />
-                <meshStandardMaterial color="#eab308" metalness={0.6} />
-              </mesh>
-            </group>
-          ))}
-        </group>
-
-        {/* Boarding Callout Indicator */}
-        <group position={[0, 2.9, 5.4]}>
-          <Text fontSize={0.32} color={isNearRocket ? '#10b981' : '#38bdf8'} fontWeight="bold" anchorX="center" outlineWidth={0.04} outlineColor="#020617">
-            {isNearRocket
-              ? '➔ [TECLA R ou ENCOSTAR] SUBIR NA CÁPSULA'
-              : '➔ APROXIME-SE DA CÁPSULA PARA SUBIR [TECLA R]'}
-          </Text>
-        </group>
+        {/* Boarding Callout Indicator (Visible strictly when astronaut is close to the capsule) */}
+        {isNearRocket && !isLaunching && (
+          <group position={[0, 2.9, 3.8]}>
+            <Text fontSize={0.3} color="#10b981" fontWeight="bold" anchorX="center" outlineWidth={0.04} outlineColor="#020617">
+              {'➔ [TECLA R ou ENCOSTAR] SUBIR NA CÁPSULA'}
+            </Text>
+          </group>
+        )}
 
         {/* Grounded Planetary Exploration Capsule Lander (Footpads seated at Y = 0!) */}
         {!isLaunching && (
@@ -606,26 +730,58 @@ export function Rocket() {
       {/* Accessible Industrial Front Stairs */}
       <LaunchPadStairs />
 
-      {/* Proximity 3D Boarding Prompt on Earth Launch Pad */}
+      {/* Proximity 3D Boarding & Fueling Status Prompt on Earth Launch Pad */}
       {isNearRocket && !isLaunching && (
         <group position={[8.5, 7.6, 0]} rotation={[0, Math.PI / 2, 0]}>
           <mesh position={[0, 0, -0.02]}>
-            <planeGeometry args={[5.8, 0.85]} />
+            <planeGeometry args={[6.4, 0.95]} />
             <meshBasicMaterial color="#0f172a" />
           </mesh>
-          <Text position={[0, 0.12, 0]} fontSize={0.26} color="#10b981" fontWeight="bold" anchorX="center">
-            [TECLA R ou ENCOSTAR] SUBIR NO FOGUETE
+          <Text
+            position={[0, 0.14, 0]}
+            fontSize={0.23}
+            color={rocketFuel >= 85 ? '#10b981' : rocketFuel > 0 ? '#f59e0b' : '#f87171'}
+            fontWeight="bold"
+            anchorX="center"
+          >
+            {rocketFuel <= 0
+              ? 'SEM COMBUSTÍVEL (0%) — ABASTECER NO PAINEL'
+              : rocketFuel < 85
+              ? `COMBUSTÍVEL ${Math.round(rocketFuel)}% (RISCO DE QUEDA <85%)`
+              : `[TECLA R] SUBIR NO FOGUETE • PRONTO (${Math.round(rocketFuel)}%)`}
           </Text>
           <Text position={[0, -0.18, 0]} fontSize={0.16} color="#facc15" fontWeight="bold" anchorX="center">
-            EMBARQUE AUTORIZADO • GGPEN PAD 39A
+            {`PESO DO FOGUETE: ${Math.round(420 + rocketFuel * 25.5)} t • GGPEN PAD 39A`}
           </Text>
+        </group>
+      )}
+
+      {/* Dramatic Ocean Impact Water Splash & Whitewater Plume when under-fueled rocket crashes into sea */}
+      {crashSplashPos && (
+        <group position={crashSplashPos}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.15, 0]}>
+            <ringGeometry args={[2.5, 9.5, 28]} />
+            <meshBasicMaterial color="#e0f2fe" transparent opacity={0.85} />
+          </mesh>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.2, 0]}>
+            <ringGeometry args={[10.5, 16.5, 28]} />
+            <meshBasicMaterial color="#38bdf8" transparent opacity={0.55} />
+          </mesh>
+          <mesh position={[0, 4.5, 0]}>
+            <cylinderGeometry args={[4.2, 1.8, 9.5, 16]} />
+            <meshBasicMaterial color="#f0f9ff" transparent opacity={0.78} />
+          </mesh>
+          <mesh position={[0, 8.5, 0]}>
+            <sphereGeometry args={[5.5, 14, 14]} />
+            <meshBasicMaterial color="#cbd5e1" transparent opacity={0.62} />
+          </mesh>
         </group>
       )}
 
       {/* ROCKET MODEL (Pre-ignites during 5-to-0 countdown and lifts off at T-0!) */}
       <group onClick={handleLaunch}>
         <group ref={rocketRef} position={[0, 4.2, 0]}>
-          <RocketModel isFlying={isLaunching && (engineIgnited || countdownRef.current <= 0)} />
+          <RocketModel isFlying={isLaunching && (engineIgnited || (countdownRef.current <= 0 && flightPhaseRef.current === 'liftoff'))} />
         </group>
       </group>
     </group>

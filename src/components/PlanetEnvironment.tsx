@@ -12,6 +12,8 @@ import { LaboratoryFacility } from './LaboratoryFacility';
 import { SkybridgeConnection } from './SkybridgeConnection';
 import { RealisticParkingLot } from './RealisticCars';
 import { WorldResources } from './WorldResources';
+import { PlanetaryBaseModule } from './PlanetaryBaseModule';
+import { RealisticEarthGlobe } from './RealisticEarthGlobe';
 
 // Procedural 360-degree Sky & Ocean Horizon Atmosphere Texture for Earth
 let cachedHorizonTexture: CanvasTexture | null = null;
@@ -292,17 +294,26 @@ function MoonEnvironment() {
         <meshBasicMaterial color="#02040a" side={BackSide} />
       </mesh>
 
-      {/* Luminous Earth in the Lunar Sky */}
-      <group position={[280, 420, -500]}>
-        <mesh>
-          <sphereGeometry args={[48, 32, 32]} />
-          <meshBasicMaterial color="#0284c7" />
-        </mesh>
-        <mesh scale={[1.05, 1.05, 1.05]}>
-          <sphereGeometry args={[48, 24, 24]} />
-          <meshBasicMaterial color="#38bdf8" transparent opacity={0.3} />
-        </mesh>
-        <Text position={[0, -60, 0]} fontSize={14} color="#7dd3fc" fontWeight="bold" anchorX="center">
+      {/* Luminous Realistic Earth in the Lunar Sky */}
+      <group position={[240, 355, -460]}>
+        <RealisticEarthGlobe
+          radius={78}
+          axialTilt={0.38}
+          sunDirection={[90, 70, 40]}
+          rotationSpeed={0.010}
+          cloudSpeed={0.018}
+          earthshine={0.14}
+          segments={64}
+        />
+        <Text
+          position={[0, -96, 0]}
+          fontSize={16}
+          color="#bae6fd"
+          outlineWidth={0.8}
+          outlineColor="#020617"
+          fontWeight="bold"
+          anchorX="center"
+        >
           PLANETA TERRA
         </Text>
       </group>
@@ -338,7 +349,7 @@ function MoonEnvironment() {
       {Array.from({ length: 90 }).map((_, i) => {
         const x = (Math.sin(i * 1.7) * 280) + (i % 2 === 0 ? 30 : -30);
         const z = (Math.cos(i * 1.7) * 280) + (i % 3 === 0 ? 40 : -40);
-        if (Math.hypot(x, z) < 18) return null;
+        if (Math.hypot(x, z) < 18 || Math.hypot(x - 24, z + 24) < 16) return null;
         return (
           <mesh
             key={`moon-rock-${i}`}
@@ -353,35 +364,16 @@ function MoonEnvironment() {
         );
       })}
 
-      {/* Artemis / GGPEN Lunar Outpost Biome Dome */}
-      <group position={[28, 0, -28]}>
-        <mesh position={[0, 4.5, 0]} castShadow>
-          <sphereGeometry args={[9, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color="#f1f5f9" metalness={0.7} roughness={0.25} />
-        </mesh>
-        {/* Air-lock Tunnel */}
-        <mesh position={[0, 1.8, 9]} castShadow>
-          <boxGeometry args={[3.2, 3.6, 5.0]} />
-          <meshStandardMaterial color="#334155" metalness={0.8} />
-        </mesh>
-        {/* High-Gain Dish */}
-        <mesh position={[0, 12, 0]} rotation={[-0.4, 0.6, 0]} castShadow>
-          <cylinderGeometry args={[2.8, 0.2, 0.6, 16]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.9} />
-        </mesh>
-        {/* Solar Tracking Arrays */}
-        {[-8, 8].map((sx, idx) => (
-          <group key={`lunar-solar-${idx}`} position={[sx, 3, -12]} rotation={[0.4, 0, 0]}>
-            <mesh castShadow>
-              <boxGeometry args={[5.5, 0.1, 3.5]} />
-              <meshStandardMaterial color="#1e3a8a" roughness={0.2} metalness={0.8} />
-            </mesh>
-          </group>
-        ))}
-        <Text position={[0, 3.5, 11.6]} fontSize={0.35} color="#38bdf8" fontWeight="bold" anchorX="center">
-          BASE LUNAR ANGOLA • GGPEN ARTEMIS
-        </Text>
-      </group>
+      {/* Artemis / GGPEN Walkable Lunar Outpost with Automatic Metal Door, Tech & Refill Station */}
+      <PlanetaryBaseModule
+        planetId="moon"
+        baseTitle="BASE LUNAR ANGOLA • GGPEN ARTEMIS"
+        position={[24, 0, -24]}
+        accentColor="#38bdf8"
+        hullColor="#f1f5f9"
+        trimColor="#eab308"
+        variant="lunar"
+      />
     </group>
   );
 }
@@ -422,7 +414,7 @@ function MercuryEnvironment() {
       {Array.from({ length: 80 }).map((_, i) => {
         const x = Math.sin(i * 2.1) * 260;
         const z = Math.cos(i * 2.1) * 260;
-        if (Math.hypot(x, z) < 18) return null;
+        if (Math.hypot(x, z) < 18 || Math.hypot(x - 26, z - 22) < 16) return null;
         return (
           <mesh
             key={`merc-rock-${i}`}
@@ -437,20 +429,16 @@ function MercuryEnvironment() {
         );
       })}
 
-      {/* Hermean Thermal-Shield Outpost with Gold MLI Canopies */}
-      <group position={[30, 0, 25]}>
-        <mesh position={[0, 3.5, 0]} castShadow>
-          <cylinderGeometry args={[6, 7, 7, 16]} />
-          <meshStandardMaterial color="#f59e0b" metalness={0.95} roughness={0.15} />
-        </mesh>
-        <mesh position={[0, 7.5, 0]} castShadow>
-          <coneGeometry args={[7.5, 2.5, 16]} />
-          <meshStandardMaterial color="#fbbf24" metalness={0.98} roughness={0.1} />
-        </mesh>
-        <Text position={[0, 3.8, 7.2]} fontSize={0.35} color="#fef08a" fontWeight="bold" anchorX="center">
-          POSTO SOLAR MERCÚRIO • GGPEN
-        </Text>
-      </group>
+      {/* Hermean Thermal-Shield Pressurized Outpost */}
+      <PlanetaryBaseModule
+        planetId="mercury"
+        baseTitle="POSTO SOLAR MERCÚRIO • GGPEN"
+        position={[26, 0, 22]}
+        accentColor="#fef08a"
+        hullColor="#f59e0b"
+        trimColor="#fbbf24"
+        variant="mercury"
+      />
     </group>
   );
 }
@@ -493,7 +481,7 @@ function VenusEnvironment() {
       {Array.from({ length: 85 }).map((_, i) => {
         const x = Math.sin(i * 1.9) * 270;
         const z = Math.cos(i * 1.9) * 270;
-        if (Math.hypot(x, z) < 18) return null;
+        if (Math.hypot(x, z) < 18 || Math.hypot(x - 26, z + 22) < 16) return null;
         return (
           <mesh
             key={`venus-crag-${i}`}
@@ -509,26 +497,15 @@ function VenusEnvironment() {
       })}
 
       {/* Venera-GGPEN Heavy Atmospheric Pressure Outpost */}
-      <group position={[32, 0, -22]}>
-        {/* Spherical Armored Titanium Hull */}
-        <mesh position={[0, 5, 0]} castShadow>
-          <sphereGeometry args={[5.5, 24, 24]} />
-          <meshStandardMaterial color="#78716c" metalness={0.85} roughness={0.25} />
-        </mesh>
-        {/* Heavy Atmospheric Dissipation Heat Shield Ring */}
-        <mesh position={[0, 4.2, 0]} rotation={[-Math.PI / 2, 0, 0]} castShadow>
-          <ringGeometry args={[5.2, 8.2, 24]} />
-          <meshStandardMaterial color="#44403c" metalness={0.9} roughness={0.4} />
-        </mesh>
-        {/* Heavy Aerodynamic Landing Skirt */}
-        <mesh position={[0, 1.5, 0]} castShadow>
-          <cylinderGeometry args={[5.6, 6.8, 3.0, 24]} />
-          <meshStandardMaterial color="#292524" metalness={0.95} />
-        </mesh>
-        <Text position={[0, 6.2, 5.8]} fontSize={0.35} color="#fbbf24" fontWeight="bold" anchorX="center">
-          SONDA DE PRESSÃO VÉNUS • GGPEN VENERA
-        </Text>
-      </group>
+      <PlanetaryBaseModule
+        planetId="venus"
+        baseTitle="ESTAÇÃO PRESSURIZADA VÉNUS • GGPEN"
+        position={[26, 0, -22]}
+        accentColor="#fbbf24"
+        hullColor="#78716c"
+        trimColor="#f59e0b"
+        variant="venus"
+      />
     </group>
   );
 }
@@ -559,7 +536,7 @@ function MarsEnvironment() {
       {Array.from({ length: 110 }).map((_, i) => {
         const x = Math.sin(i * 1.5) * 290;
         const z = Math.cos(i * 1.5) * 290;
-        if (Math.hypot(x, z) < 18) return null;
+        if (Math.hypot(x, z) < 18 || Math.hypot(x - 26, z + 24) < 16 || Math.hypot(x - 46, z + 24) < 12) return null;
         return (
           <mesh
             key={`mars-rock-${i}`}
@@ -574,34 +551,26 @@ function MarsEnvironment() {
         );
       })}
 
-      {/* Mars Base Alpha: Interconnected Geodesic Biome Domes & Greenhouse */}
-      <group position={[32, 0, -28]}>
-        {/* Main Habitat Dome */}
-        <mesh position={[0, 5, 0]} castShadow>
-          <sphereGeometry args={[10, 28, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.3} metalness={0.7} />
+      {/* Mars Base Alpha: Walkable Tech Habitat + Neighboring Hydroponic Greenhouse & MOXIE Tower */}
+      <PlanetaryBaseModule
+        planetId="mars"
+        baseTitle="BASE MARTE ALPHA • GGPEN COLÓNIA"
+        position={[26, 0, -24]}
+        accentColor="#38bdf8"
+        hullColor="#f8fafc"
+        trimColor="#22c55e"
+        variant="mars"
+      />
+      <group position={[46, 0, -24]}>
+        <mesh position={[0, 4, 0]} castShadow>
+          <sphereGeometry args={[7.2, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color="#86efac" transparent opacity={0.62} roughness={0.15} />
         </mesh>
-        {/* Hydroponic Greenhouse Dome (Glowing Green Plant Interior) */}
-        <group position={[18, 0, 0]}>
-          <mesh position={[0, 4, 0]} castShadow>
-            <sphereGeometry args={[7.5, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-            <meshStandardMaterial color="#86efac" transparent opacity={0.65} roughness={0.15} />
-          </mesh>
-          <pointLight position={[0, 3, 0]} color="#22c55e" intensity={1.8} distance={20} />
-        </group>
-        {/* Connecting Pressurized Tunnel */}
-        <mesh position={[9, 1.8, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[2.0, 2.0, 10, 16]} />
-          <meshStandardMaterial color="#334155" metalness={0.8} />
-        </mesh>
-        {/* MOXIE Oxygen Production Tower */}
-        <mesh position={[-14, 3.5, 5]} castShadow>
+        <pointLight position={[0, 3, 0]} color="#22c55e" intensity={1.8} distance={20} />
+        <mesh position={[-11, 3.5, 10]} castShadow>
           <cylinderGeometry args={[1.4, 1.8, 7, 16]} />
           <meshStandardMaterial color="#0284c7" metalness={0.85} />
         </mesh>
-        <Text position={[0, 3.8, 10.6]} fontSize={0.38} color="#38bdf8" fontWeight="bold" anchorX="center">
-          BASE MARTE ALPHA • GGPEN COLÓNIA
-        </Text>
       </group>
     </group>
   );
@@ -637,16 +606,16 @@ function TitanEnvironment() {
         </mesh>
       </group>
 
-      {/* Dragonfly / Huygens Exploration Base */}
-      <group position={[25, 0, -25]}>
-        <mesh position={[0, 3.2, 0]} castShadow>
-          <boxGeometry args={[8, 4.5, 6]} />
-          <meshStandardMaterial color="#cbd5e1" metalness={0.85} roughness={0.25} />
-        </mesh>
-        <Text position={[0, 2.5, 3.2]} fontSize={0.35} color="#fbbf24" fontWeight="bold" anchorX="center">
-          POSTO CRIOGÉNICO TITÃ • GGPEN HUYGENS
-        </Text>
-      </group>
+      {/* Dragonfly / Huygens Cryogenic Pressurized Exploration Base */}
+      <PlanetaryBaseModule
+        planetId="titan"
+        baseTitle="POSTO CRIOGÉNICO TITÃ • GGPEN HUYGENS"
+        position={[24, 0, -24]}
+        accentColor="#fbbf24"
+        hullColor="#cbd5e1"
+        trimColor="#38bdf8"
+        variant="titan"
+      />
     </group>
   );
 }
@@ -712,6 +681,16 @@ function GasGiantStationEnvironment({ planet }: { planet: PlanetInfo }) {
         </group>
       ))}
 
+      <PlanetaryBaseModule
+        planetId={planet.id}
+        baseTitle={`ESTAÇÃO AEROESTÁTICA • ${planet.name.toUpperCase()}`}
+        position={[0, 0, -28]}
+        accentColor="#38bdf8"
+        hullColor="#e2e8f0"
+        trimColor="#eab308"
+        variant="gas"
+      />
+
       <Text position={[0, 2.5, 25]} fontSize={1.4} color="#38bdf8" fontWeight="bold" anchorX="center">
         {`ESTAÇÃO AEROESTÁTICA • ${planet.name.toUpperCase()} (GGPEN)`}
       </Text>
@@ -747,7 +726,7 @@ function ExoplanetEnvironment({ planet }: { planet: PlanetInfo }) {
       {Array.from({ length: 90 }).map((_, i) => {
         const x = Math.sin(i * 1.8) * 280;
         const z = Math.cos(i * 1.8) * 280;
-        if (Math.hypot(x, z) < 18) return null;
+        if (Math.hypot(x, z) < 18 || Math.hypot(x - 24, z + 22) < 16) return null;
         return (
           <mesh
             key={`exo-cryst-${i}`}
@@ -762,16 +741,16 @@ function ExoplanetEnvironment({ planet }: { planet: PlanetInfo }) {
         );
       })}
 
-      {/* Interstellar GGPEN Deep Space Station */}
-      <group position={[28, 0, -24]}>
-        <mesh position={[0, 4.5, 0]} castShadow>
-          <cylinderGeometry args={[7, 8, 9, 16]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.88} roughness={0.2} />
-        </mesh>
-        <Text position={[0, 4.2, 8.4]} fontSize={0.35} color="#c084fc" fontWeight="bold" anchorX="center">
-          {`EXPEDIÇÃO INTERESTELAR • ${planet.name.toUpperCase()}`}
-        </Text>
-      </group>
+      {/* Interstellar GGPEN Deep Space Outpost */}
+      <PlanetaryBaseModule
+        planetId={planet.id}
+        baseTitle={`EXPEDIÇÃO INTERESTELAR • ${planet.name.toUpperCase()}`}
+        position={[24, 0, -22]}
+        accentColor={exoColor}
+        hullColor="#e2e8f0"
+        trimColor="#c084fc"
+        variant="exo"
+      />
     </group>
   );
 }

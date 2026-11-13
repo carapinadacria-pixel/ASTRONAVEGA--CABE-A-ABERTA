@@ -11,10 +11,12 @@ interface AngolaFlagProps {
   framed?: boolean;
   radius?: number;
   slope?: number;
+  trimColor?: string | null;
+  backingColor?: string | null;
 }
 
 // Procedural curved hull decal geometry that hugs cylindrical or conical spacecraft fuselages 100% flush
-function createCurvedHullGeometry(width: number, height: number, radius = 1.2, slope = 0, segmentsX = 24, segmentsY = 8) {
+function createCurvedHullGeometry(width: number, height: number, radius = 1.2, slope = 0, segmentsX = 28, segmentsY = 10) {
   const geo = new PlaneGeometry(width, height, segmentsX, segmentsY);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
@@ -102,26 +104,32 @@ export function CurvedAngolaFlagDecal({
   position = [0, 0, 0],
   rotation = [0, 0, 0],
   scale = [1, 1, 1],
+  trimColor = '#eab308',
 }: AngolaFlagProps) {
   const texture = useTexture('/angola_flag.jpg');
   useMemo(() => configureHighDefTexture(texture), [texture]);
 
-  const trimGeo = useMemo(() => createCurvedHullGeometry(width + 0.05, height + 0.05, radius, slope), [width, height, radius, slope]);
+  const trimGeo = useMemo(
+    () => (trimColor ? createCurvedHullGeometry(width + 0.05, height + 0.05, radius, slope) : null),
+    [width, height, radius, slope, trimColor]
+  );
   const flagGeo = useMemo(() => createCurvedHullGeometry(width, height, radius + 0.003, slope), [width, height, radius, slope]);
 
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      <mesh geometry={trimGeo}>
-        <meshStandardMaterial
-          color="#eab308"
-          metalness={0.85}
-          roughness={0.22}
-          side={DoubleSide}
-          polygonOffset
-          polygonOffsetFactor={-2}
-          polygonOffsetUnits={-2}
-        />
-      </mesh>
+      {trimGeo && trimColor && (
+        <mesh geometry={trimGeo}>
+          <meshStandardMaterial
+            color={trimColor}
+            metalness={0.85}
+            roughness={0.22}
+            side={DoubleSide}
+            polygonOffset
+            polygonOffsetFactor={-2}
+            polygonOffsetUnits={-2}
+          />
+        </mesh>
+      )}
       <mesh geometry={flagGeo} position={[0, 0, 0.002]}>
         <meshStandardMaterial
           map={texture}
@@ -148,38 +156,50 @@ export function CurvedGGPENLogoDecal({
   position = [0, 0, 0],
   rotation = [0, 0, 0],
   scale = [1, 1, 1],
+  trimColor = '#eab308',
+  backingColor = '#ffffff',
 }: AngolaFlagProps) {
   const texture = useTexture('/ggpen_logo.png');
   useMemo(() => configureHighDefTexture(texture), [texture]);
 
-  const trimGeo = useMemo(() => createCurvedHullGeometry(width + 0.05, height + 0.05, radius, slope), [width, height, radius, slope]);
-  const baseGeo = useMemo(() => createCurvedHullGeometry(width, height, radius + 0.002, slope), [width, height, radius, slope]);
+  const trimGeo = useMemo(
+    () => (trimColor ? createCurvedHullGeometry(width + 0.05, height + 0.05, radius, slope) : null),
+    [width, height, radius, slope, trimColor]
+  );
+  const baseGeo = useMemo(
+    () => (backingColor ? createCurvedHullGeometry(width, height, radius + 0.002, slope) : null),
+    [width, height, radius, slope, backingColor]
+  );
   const logoGeo = useMemo(() => createCurvedHullGeometry(width - 0.02, height - 0.02, radius + 0.005, slope), [width, height, radius, slope]);
 
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      <mesh geometry={trimGeo}>
-        <meshStandardMaterial
-          color="#eab308"
-          metalness={0.85}
-          roughness={0.22}
-          side={DoubleSide}
-          polygonOffset
-          polygonOffsetFactor={-2}
-          polygonOffsetUnits={-2}
-        />
-      </mesh>
-      <mesh geometry={baseGeo} position={[0, 0, 0.001]}>
-        <meshStandardMaterial
-          color="#ffffff"
-          roughness={0.25}
-          metalness={0.05}
-          side={DoubleSide}
-          polygonOffset
-          polygonOffsetFactor={-3}
-          polygonOffsetUnits={-3}
-        />
-      </mesh>
+      {trimGeo && trimColor && (
+        <mesh geometry={trimGeo}>
+          <meshStandardMaterial
+            color={trimColor}
+            metalness={0.85}
+            roughness={0.22}
+            side={DoubleSide}
+            polygonOffset
+            polygonOffsetFactor={-2}
+            polygonOffsetUnits={-2}
+          />
+        </mesh>
+      )}
+      {baseGeo && backingColor && (
+        <mesh geometry={baseGeo} position={[0, 0, 0.001]}>
+          <meshStandardMaterial
+            color={backingColor}
+            roughness={0.25}
+            metalness={0.05}
+            side={DoubleSide}
+            polygonOffset
+            polygonOffsetFactor={-3}
+            polygonOffsetUnits={-3}
+          />
+        </mesh>
+      )}
       <mesh geometry={logoGeo} position={[0, 0, 0.003]}>
         <meshStandardMaterial
           map={texture}
@@ -191,6 +211,45 @@ export function CurvedGGPENLogoDecal({
           polygonOffset
           polygonOffsetFactor={-5}
           polygonOffsetUnits={-5}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+/**
+ * Flush Curved Astronavega Logo Decal for Cylindrical or Conical Spacecraft Fuselages
+ */
+export function CurvedAstronavegaLogoDecal({
+  width = 2.0,
+  height = 2.2,
+  radius = 2.91,
+  slope = 0.01,
+  position = [0, 0, 0],
+  rotation = [0, 0, 0],
+  scale = [1, 1, 1],
+}: AngolaFlagProps) {
+  const texture = useTexture('/astronavega_logo.png');
+  useMemo(() => configureHighDefTexture(texture), [texture]);
+
+  const decalGeo = useMemo(
+    () => createCurvedHullGeometry(width, height, radius, slope, 28, 12),
+    [width, height, radius, slope]
+  );
+
+  return (
+    <group position={position} rotation={rotation} scale={scale}>
+      <mesh geometry={decalGeo}>
+        <meshStandardMaterial
+          map={texture}
+          transparent
+          alphaTest={0.01}
+          roughness={0.26}
+          metalness={0.06}
+          side={DoubleSide}
+          polygonOffset
+          polygonOffsetFactor={-4}
+          polygonOffsetUnits={-4}
         />
       </mesh>
     </group>
@@ -368,43 +427,50 @@ function getProcessedCabecaAbertaTexture(): CanvasTexture | null {
   if (cachedCabecaAbertaTexture) return cachedCabecaAbertaTexture;
   if (typeof document === 'undefined') return null;
 
+  // Initialize power-of-two canvas upfront BEFORE constructing CanvasTexture
+  // so mipmaps & GPU allocation dimensions never mismatch when img.onload fires!
   const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 512;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
+
+  const tex = new CanvasTexture(canvas);
+  tex.generateMipmaps = false;
+  tex.minFilter = LinearFilter;
+  tex.magFilter = LinearFilter;
+  tex.anisotropy = 8;
+  cachedCabecaAbertaTexture = tex;
 
   const img = new Image();
   img.src = '/cabeca_aberta_logo.png';
   img.onload = () => {
-    canvas.width = img.width || 530;
-    canvas.height = img.height || 270;
-    ctx.drawImage(img, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imgData.data;
 
-    // Harmonize contrast for aerospace rocket:
-    // 1. Key out the dark gradient background (make it transparent)
-    // 2. Transform the white text ("Cabeça Aberta", "Inovação") & white head puzzle pieces into
-    //    sharp aerospace dark navy/charcoal (#0f172a) so it stands out with high contrast on the white rocket!
-    // 3. Keep the vibrant electric cyan puzzle piece (#00e5ff) brilliant and striking!
+    // Harmonize contrast for white rocket livery:
+    // 1. Key out the dark gradient background (transparent)
+    // 2. Transform text & jigsaw silhouette into crisp dark aerospace slate (#0f172a)
+    // 3. Preserve electric cyan puzzle highlight (#00e5ff)
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
 
-      const isCyan = (g > 150 && b > 175 && r < 125);
-      const isDarkBg = (r < 85 && g < 85 && b < 85);
+      const isCyan = g > 145 && b > 165 && r < 130;
+      const isDarkBg = r < 85 && g < 85 && b < 85;
 
       if (isDarkBg) {
-        data[i + 3] = 0; // Transparent background
+        data[i + 3] = 0;
       } else if (isCyan) {
-        // Vibrant aerospace electric cyan puzzle piece
         data[i] = 0;
         data[i + 1] = 229;
         data[i + 2] = 255;
         data[i + 3] = 255;
       } else {
-        // High-contrast aerospace carbon/navy text and jigsaw profile
         data[i] = 15;
         data[i + 1] = 23;
         data[i + 2] = 42;
@@ -413,15 +479,52 @@ function getProcessedCabecaAbertaTexture(): CanvasTexture | null {
     }
 
     ctx.putImageData(imgData, 0, 0);
-    if (cachedCabecaAbertaTexture) {
-      cachedCabecaAbertaTexture.needsUpdate = true;
-    }
+    tex.needsUpdate = true;
   };
 
-  cachedCabecaAbertaTexture = new CanvasTexture(canvas);
-  cachedCabecaAbertaTexture.generateMipmaps = true;
-  cachedCabecaAbertaTexture.anisotropy = 8;
   return cachedCabecaAbertaTexture;
+}
+
+/**
+ * Flush Curved Cabeça Aberta Logo Decal for Cylindrical or Conical Spacecraft Fuselages
+ */
+export function CurvedCabecaAbertaLogoDecal({
+  width = 3.55,
+  height = 1.80,
+  radius = 2.95,
+  slope = 0.01,
+  position = [0, 0, 0],
+  rotation = [0, 0, 0],
+  scale = [1, 1, 1],
+}: AngolaFlagProps) {
+  const fallbackTexture = useTexture('/cabeca_aberta_logo.png');
+  useMemo(() => configureHighDefTexture(fallbackTexture), [fallbackTexture]);
+
+  const processedTexture = useMemo(() => getProcessedCabecaAbertaTexture(), []);
+  const activeTexture = processedTexture || fallbackTexture;
+
+  const decalGeo = useMemo(
+    () => createCurvedHullGeometry(width, height, radius, slope, 28, 12),
+    [width, height, radius, slope]
+  );
+
+  return (
+    <group position={position} rotation={rotation} scale={scale}>
+      <mesh geometry={decalGeo}>
+        <meshStandardMaterial
+          map={activeTexture}
+          transparent
+          alphaTest={0.01}
+          roughness={0.25}
+          metalness={0.05}
+          side={DoubleSide}
+          polygonOffset
+          polygonOffsetFactor={-4}
+          polygonOffsetUnits={-4}
+        />
+      </mesh>
+    </group>
+  );
 }
 
 export function CabecaAbertaLogoDecal({
@@ -480,4 +583,3 @@ useTexture.preload('/space_apps_luanda_emblem.png');
 useTexture.preload('/nasa_logo.svg');
 useTexture.preload('/astronavega_logo.png');
 useTexture.preload('/cabeca_aberta_logo.png');
-

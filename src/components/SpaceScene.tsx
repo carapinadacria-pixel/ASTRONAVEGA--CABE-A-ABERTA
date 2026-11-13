@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { useGameStore, PLANETS, PlanetInfo } from '../store';
 import {
   Vector3,
+  Quaternion,
   Group,
   Color,
   CanvasTexture,
@@ -11,12 +12,13 @@ import {
   SRGBColorSpace,
   RepeatWrapping,
   DoubleSide,
-  Mesh,
   MathUtils,
 } from 'three';
 import { RocketModel } from './RocketModel';
 import { OrbitalCapsule } from './OrbitalCapsule';
+import { RealisticEarthGlobe } from './RealisticEarthGlobe';
 import { Text, Stars, Sphere, Ring, useKeyboardControls, Instances, Instance } from '@react-three/drei';
+import { playSolarEvaporationSound } from '../audio';
 
 // Reusable scratch vectors to eliminate per-frame GC allocations in spaceflight
 const _spaceIdealOffset = new Vector3();
@@ -35,142 +37,10 @@ interface CosmicPlanet extends PlanetInfo {
 // Realistic Earth (Continents & Oceans), Jupiter (Bands & Red Spot), Saturn, Mars, Venus
 // ---------------------------------------------------------------------------
 
-let cachedEarthTexture: CanvasTexture | null = null;
-let cachedEarthCloudTexture: CanvasTexture | null = null;
 let cachedJupiterTexture: CanvasTexture | null = null;
 let cachedSaturnTexture: CanvasTexture | null = null;
 let cachedMarsTexture: CanvasTexture | null = null;
 let cachedVenusTexture: CanvasTexture | null = null;
-
-function createEarthTextures() {
-  if (cachedEarthTexture && cachedEarthCloudTexture) {
-    return { earthMap: cachedEarthTexture, cloudMap: cachedEarthCloudTexture };
-  }
-  if (typeof document === 'undefined') return { earthMap: null, cloudMap: null };
-
-  const w = 1024;
-  const h = 512;
-
-  // 1. Earth Surface Map: Deep Sapphire Oceans & Geographic Continents
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    // Deep Ocean Base
-    const oceanGrad = ctx.createLinearGradient(0, 0, 0, h);
-    oceanGrad.addColorStop(0, '#0a2540');
-    oceanGrad.addColorStop(0.2, '#034a87');
-    oceanGrad.addColorStop(0.5, '#0284c7');
-    oceanGrad.addColorStop(0.8, '#034a87');
-    oceanGrad.addColorStop(1, '#0a2540');
-    ctx.fillStyle = oceanGrad;
-    ctx.fillRect(0, 0, w, h);
-
-    // Continental shelf shallow cyan waters
-    ctx.fillStyle = '#06b6d4';
-
-    // Helper: draw smooth landmass polygon
-    const drawLand = (points: [number, number][], fillStyle: string) => {
-      ctx.fillStyle = fillStyle;
-      ctx.beginPath();
-      ctx.moveTo(points[0][0], points[0][1]);
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i][0], points[i][1]);
-      }
-      ctx.closePath();
-      ctx.fill();
-    };
-
-    // AFRICA: Center (Lon ~0° to 50°E, Lat +37°N to -35°S)
-    // Sahara Desert (Golden Ochre)
-    drawLand([
-      [470, 180], [560, 175], [580, 220], [530, 240], [475, 230], [465, 200]
-    ], '#d97706');
-    // Equatorial & Southern Africa (Rainforests & Savannah)
-    drawLand([
-      [475, 230], [530, 240], [580, 220], [590, 270], [565, 330],
-      [525, 360], [490, 310], [475, 260]
-    ], '#15803d');
-    // Angola Coastline Highlight (West Southern Africa: Lat -6° to -18°)
-    ctx.fillStyle = '#65a30d';
-    ctx.beginPath();
-    ctx.ellipse(500, 295, 24, 38, -0.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    // EUROPE & MEDITERRANEAN
-    drawLand([
-      [470, 130], [500, 110], [550, 120], [560, 160], [480, 165]
-    ], '#16a34a');
-
-    // ASIA & INDIA & HIMALAYAS
-    drawLand([
-      [560, 120], [680, 100], [800, 130], [830, 210], [740, 230],
-      [680, 200], [630, 240], [580, 180]
-    ], '#22c55e');
-    // Snowy Himalayas
-    drawLand([
-      [640, 180], [710, 185], [700, 195], [635, 190]
-    ], '#f8fafc');
-
-    // NORTH AMERICA
-    drawLand([
-      [150, 120], [240, 100], [320, 130], [310, 190], [270, 230],
-      [220, 220], [180, 170]
-    ], '#16a34a');
-    // Rocky Mountains
-    drawLand([[190, 130], [210, 180], [200, 190], [180, 140]], '#b45309');
-
-    // SOUTH AMERICA & AMAZON BASIN
-    drawLand([
-      [270, 240], [350, 260], [370, 310], [340, 390], [300, 420],
-      [275, 330], [260, 270]
-    ], '#15803d');
-
-    // AUSTRALIA
-    drawLand([
-      [760, 320], [840, 310], [860, 370], [800, 400], [750, 360]
-    ], '#c2410c');
-
-    // POLAR ICE CAPS (North Pole & Antarctica)
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(0, 0, w, 40);
-    ctx.fillRect(0, h - 55, w, 55);
-  }
-
-  cachedEarthTexture = new CanvasTexture(canvas);
-  cachedEarthTexture.colorSpace = SRGBColorSpace;
-  cachedEarthTexture.wrapS = RepeatWrapping;
-  cachedEarthTexture.wrapT = RepeatWrapping;
-
-  // 2. Translucent Dynamic Cloud Shell Texture
-  const cCanvas = document.createElement('canvas');
-  cCanvas.width = 512;
-  cCanvas.height = 256;
-  const cCtx = cCanvas.getContext('2d');
-  if (cCtx) {
-    cCtx.fillStyle = 'rgba(0,0,0,0)';
-    cCtx.fillRect(0, 0, 512, 256);
-
-    // Swirling cloud belts across trade winds and mid-latitudes
-    for (let i = 0; i < 400; i++) {
-      const x = Math.random() * 512;
-      const y = 30 + Math.random() * 196;
-      const rx = 15 + Math.random() * 45;
-      const ry = 4 + Math.random() * 12;
-      cCtx.fillStyle = `rgba(255, 255, 255, ${0.15 + Math.random() * 0.45})`;
-      cCtx.beginPath();
-      cCtx.ellipse(x, y, rx, ry, (Math.random() - 0.5) * 0.4, 0, Math.PI * 2);
-      cCtx.fill();
-    }
-  }
-
-  cachedEarthCloudTexture = new CanvasTexture(cCanvas);
-  cachedEarthCloudTexture.wrapS = RepeatWrapping;
-  cachedEarthCloudTexture.wrapT = RepeatWrapping;
-
-  return { earthMap: cachedEarthTexture, cloudMap: cachedEarthCloudTexture };
-}
 
 function createJupiterTexture(): CanvasTexture | null {
   if (cachedJupiterTexture) return cachedJupiterTexture;
@@ -333,7 +203,6 @@ function createVenusTexture(): CanvasTexture | null {
 export function SpaceScene() {
   const rocketRef = useRef<Group>(null);
   const visualCapsuleRef = useRef<Group>(null);
-  const earthCloudsRef = useRef<Mesh>(null);
   const initializedSpawnRef = useRef(false);
   const { setPlanet, loadExoplanets } = useGameStore();
   const speedRef = useRef(180);
@@ -342,12 +211,19 @@ export function SpaceScene() {
   const rollAngleRef = useRef(0);
   const pitchTiltRef = useRef(0);
   const cameraLookAtRef = useRef(new Vector3());
+  const smoothedCamQuatRef = useRef(new Quaternion());
+  const smoothedCamDistRef = useRef(22.5);
+  const smoothedCamHeightRef = useRef(8.0);
+  const lastHudSyncRef = useRef(-1);
+  const evaporatingRef = useRef(false);
+  const evapTimerRef = useRef(0);
+  const [solarState, setSolarState] = useState({ heatPct: 0, isEvaporating: false });
   const [isFlying, setIsFlying] = useState(true);
   // Staging ("desencapsulamento") happens ONLY ONCE when leaving Earth for the first time
   const initialStaged = useGameStore.getState().hasCompletedInitialStaging || useGameStore.getState().planetIndex !== 0;
   const [stagingProgress, setStagingProgress] = useState(initialStaged ? 1.0 : 0.0);
   const [rcsState, setRcsState] = useState({ pitch: 0, yaw: 0, thrust: 0.4 });
-  const [telemetry, setTelemetry] = useState({ speed: 180, target: 'Terra', distKm: 0 });
+  const [telemetry, setTelemetry] = useState({ speed: Math.round(180 * 3.6), target: 'Terra', distKm: 0 });
   const [, getKeys] = useKeyboardControls();
 
   // Load NASA exoplanets on mount & sync initial staging state
@@ -361,7 +237,6 @@ export function SpaceScene() {
   }, [loadExoplanets]);
 
   // Procedural planetary surface textures
-  const { earthMap, cloudMap } = useMemo(() => createEarthTextures(), []);
   const jupiterMap = useMemo(() => createJupiterTexture(), []);
   const saturnMap = useMemo(() => createSaturnTexture(), []);
   const marsMap = useMemo(() => createMarsTexture(), []);
@@ -385,13 +260,13 @@ export function SpaceScene() {
         case 'mercury':
           visualRadius = 180;
           atmosphereColor = '#a8a29e';
-          dist = 2600;
+          dist = 3550;
           angle = 0.45;
           break;
         case 'venus':
           visualRadius = 360;
           atmosphereColor = '#fbbf24';
-          dist = 4200;
+          dist = 5000;
           angle = 1.35;
           break;
         case 'earth':
@@ -540,12 +415,15 @@ export function SpaceScene() {
       _spawnLookTarget.set(-radialOut.z * 8000, 0, radialOut.x * 8000);
       rocketRef.current.lookAt(_spawnLookTarget);
 
-      // Snap camera behind capsule on initial frame
+      // Snap camera & smoothed chase quaternion behind capsule on initial frame
+      smoothedCamQuatRef.current.copy(rocketRef.current.quaternion);
+      smoothedCamDistRef.current = 23.0;
+      smoothedCamHeightRef.current = 8.2;
       _spaceIdealOffset.set(0, 8.2, 23)
-        .applyQuaternion(rocketRef.current.quaternion)
+        .applyQuaternion(smoothedCamQuatRef.current)
         .add(rocketRef.current.position);
       _spaceIdealLookAt.set(0, 0, -25)
-        .applyQuaternion(rocketRef.current.quaternion)
+        .applyQuaternion(smoothedCamQuatRef.current)
         .add(rocketRef.current.position);
       state.camera.position.copy(_spaceIdealOffset);
       cameraLookAtRef.current.copy(_spaceIdealLookAt);
@@ -557,15 +435,66 @@ export function SpaceScene() {
       const nextProgress = Math.min(1.0, stagingProgress + delta / 8.0);
       setStagingProgress(nextProgress);
       const store = useGameStore.getState();
-      store.setSpaceFlightData({ stagingProgress: nextProgress });
-      if (nextProgress >= 1.0 && !store.hasCompletedInitialStaging) {
-        store.setHasCompletedInitialStaging(true);
+      if (nextProgress >= 1.0) {
+        store.setSpaceFlightData({ stagingProgress: 1.0 });
+        if (!store.hasCompletedInitialStaging) {
+          store.setHasCompletedInitialStaging(true);
+        }
+      } else if (state.clock.elapsedTime - lastHudSyncRef.current >= 0.12) {
+        store.setSpaceFlightData({ stagingProgress: nextProgress });
       }
     }
 
-    // Rotate Earth's atmospheric cloud layer
-    if (earthCloudsRef.current) {
-      earthCloudsRef.current.rotation.y += delta * 0.04;
+    // Handle active solar evaporation sequence (capsule melts & respawns safely in space)
+    if (evaporatingRef.current) {
+      evapTimerRef.current += delta;
+      speedRef.current = MathUtils.damp(speedRef.current, 0, 4.5, delta);
+      rocketRef.current.translateZ(-speedRef.current * delta);
+      if (visualCapsuleRef.current) {
+        const shrink = Math.max(0.03, 1.2 * (1 - evapTimerRef.current / 1.85));
+        const jitter = 1 + Math.sin(state.clock.elapsedTime * 60) * 0.12;
+        visualCapsuleRef.current.scale.setScalar(shrink * jitter);
+      }
+
+      const rotAlphaEvap = 1 - Math.exp(-9.0 * delta);
+      smoothedCamQuatRef.current.slerp(rocketRef.current.quaternion, rotAlphaEvap);
+      _spaceIdealOffset
+        .set(0, smoothedCamHeightRef.current, smoothedCamDistRef.current)
+        .applyQuaternion(smoothedCamQuatRef.current)
+        .add(rocketRef.current.position);
+      _spaceIdealLookAt
+        .set(0, 0, -28)
+        .applyQuaternion(smoothedCamQuatRef.current)
+        .add(rocketRef.current.position);
+      state.camera.position.copy(_spaceIdealOffset);
+      cameraLookAtRef.current.copy(_spaceIdealLookAt);
+      state.camera.lookAt(cameraLookAtRef.current);
+
+      if (evapTimerRef.current >= 1.85) {
+        evaporatingRef.current = false;
+        evapTimerRef.current = 0;
+        if (visualCapsuleRef.current) {
+          visualCapsuleRef.current.scale.setScalar(1.2);
+        }
+        const safeEarth = planetPositions.find((p) => p.type === 'earth') || planetPositions[0];
+        const radialOut = safeEarth.pos.clone().normalize();
+        if (radialOut.lengthSq() < 0.01) radialOut.set(0, 0, 1);
+        rocketRef.current.position
+          .copy(safeEarth.pos)
+          .addScaledVector(radialOut, safeEarth.visualRadius + 560)
+          .add(new Vector3(0, 85, 0));
+        _spawnLookTarget.set(-radialOut.z * 8000, 0, radialOut.x * 8000);
+        rocketRef.current.lookAt(_spawnLookTarget);
+        smoothedCamQuatRef.current.copy(rocketRef.current.quaternion);
+        speedRef.current = 180;
+        pitchVelRef.current = 0;
+        yawVelRef.current = 0;
+        rollAngleRef.current = 0;
+        pitchTiltRef.current = 0;
+        setSolarState({ heatPct: 0, isEvaporating: false });
+        useGameStore.getState().setSpaceFlightData({ solarHeatPct: 0, isEvaporating: false });
+      }
+      return;
     }
 
     const { forward, backward, left, right, jump, sprint } = getKeys();
@@ -644,23 +573,30 @@ export function SpaceScene() {
     // Move forward along the capsule's longitudinal trajectory
     rocketRef.current.translateZ(-speedRef.current * delta);
 
-    // Smooth Third-Person Cinematic Follow Camera with subtle speed pullback
+    // Lockstep Zero-Vibration Follow Camera:
+    // Smooth ONLY rotational quaternion and local pullback scalars; add directly to rocketRef.current.position
+    // so camera translates at exact capsule velocity with zero world-space spring oscillation or delta jitter!
     const boostFactor = MathUtils.clamp((speedRef.current - 180) / 1100, 0, 1);
-    const camDist = MathUtils.lerp(22.5, 28.0, boostFactor);
-    const camHeight = MathUtils.lerp(8.0, 9.2, boostFactor);
+    const targetCamDist = MathUtils.lerp(22.5, 28.0, boostFactor);
+    const targetCamHeight = MathUtils.lerp(8.0, 9.2, boostFactor);
 
-    _spaceIdealOffset.set(0, camHeight, camDist)
-      .applyQuaternion(rocketRef.current.quaternion)
+    smoothedCamDistRef.current = MathUtils.damp(smoothedCamDistRef.current, targetCamDist, 6.0, delta);
+    smoothedCamHeightRef.current = MathUtils.damp(smoothedCamHeightRef.current, targetCamHeight, 6.0, delta);
+    const rotAlpha = 1 - Math.exp(-9.0 * delta);
+    smoothedCamQuatRef.current.slerp(rocketRef.current.quaternion, rotAlpha);
+
+    _spaceIdealOffset
+      .set(0, smoothedCamHeightRef.current, smoothedCamDistRef.current)
+      .applyQuaternion(smoothedCamQuatRef.current)
       .add(rocketRef.current.position);
 
-    _spaceIdealLookAt.set(0, 0, -28)
-      .applyQuaternion(rocketRef.current.quaternion)
+    _spaceIdealLookAt
+      .set(0, 0, -28)
+      .applyQuaternion(smoothedCamQuatRef.current)
       .add(rocketRef.current.position);
 
-    const camAlpha = 1 - Math.exp(-10.5 * delta);
-    const lookAlpha = 1 - Math.exp(-14.0 * delta);
-    state.camera.position.lerp(_spaceIdealOffset, camAlpha);
-    cameraLookAtRef.current.lerp(_spaceIdealLookAt, lookAlpha);
+    state.camera.position.copy(_spaceIdealOffset);
+    cameraLookAtRef.current.copy(_spaceIdealLookAt);
     state.camera.lookAt(cameraLookAtRef.current);
 
     // Nearest planet distance calculation & telemetry HUD updates
@@ -683,27 +619,51 @@ export function SpaceScene() {
       }
     }
 
-    // Update telemetry & RCS visual state periodically
-    if (Math.floor(state.clock.elapsedTime * 6) % 2 === 0) {
-      const currentSpeed = Math.round(speedRef.current);
+    // Check distance to the Sun (0, 0, 0): thermal proximity warning & evaporation respawn
+    const distToSun = rocketPos.length();
+    const solarHeatPct =
+      distToSun < 2950
+        ? Math.round(MathUtils.clamp((2950 - distToSun) / (2950 - 2100), 0, 1) * 100)
+        : 0;
+
+    if (!evaporatingRef.current && distToSun < 2100) {
+      evaporatingRef.current = true;
+      evapTimerRef.current = 0;
+      playSolarEvaporationSound();
+      setSolarState({ heatPct: 100, isEvaporating: true });
+      useGameStore.getState().setSpaceFlightData({ solarHeatPct: 100, isEvaporating: true });
+      return;
+    }
+
+    // Update telemetry & RCS visual state smoothly at ~8Hz (zero per-frame React stutter)
+    if (state.clock.elapsedTime - lastHudSyncRef.current >= 0.12) {
+      lastHudSyncRef.current = state.clock.elapsedTime;
+      const currentSpeedKmh = Math.round(speedRef.current * 3.6);
       const currentTarget = closestPlanet?.name || 'Terra';
       const currentDistKm = parseFloat((minDistance / 100).toFixed(1));
       const normalizedThrust = MathUtils.clamp(speedRef.current / 950, 0.2, 1.35);
 
+      setSolarState((prev) =>
+        prev.heatPct === solarHeatPct && !prev.isEvaporating
+          ? prev
+          : { heatPct: solarHeatPct, isEvaporating: false }
+      );
       setRcsState({
         pitch: pitchVelRef.current,
         yaw: yawVelRef.current,
         thrust: normalizedThrust,
       });
       setTelemetry({
-        speed: currentSpeed,
+        speed: currentSpeedKmh,
         target: currentTarget,
         distKm: currentDistKm,
       });
       useGameStore.getState().setSpaceFlightData({
-        speed: currentSpeed,
+        speed: currentSpeedKmh,
         target: currentTarget,
         distKm: currentDistKm,
+        solarHeatPct,
+        isEvaporating: false,
       });
     }
   });
@@ -717,27 +677,38 @@ export function SpaceScene() {
       {/* Deep Cosmos Multi-Layer Starfield */}
       <Stars radius={35000} depth={10000} count={12000} factor={8} saturation={0.2} fade speed={0.3} />
 
-      {/* Radiant Central Star (Sun) at (0, 0, 0) with Multi-Layer Solar Corona */}
-      <group position={[0, 0, 0]}>
+      {/* Radiant Central Star (Always-Visible Larger Sun) at (0, 0, 0) with Multi-Layer Solar Corona */}
+      <group position={[0, 0, 0]} frustumCulled={false}>
         {/* Blazing Incandescent Solar Core */}
-        <Sphere args={[1200, 64, 64]}>
-          <meshBasicMaterial color="#fffbeb" />
+        <Sphere args={[1750, 64, 64]} frustumCulled={false}>
+          <meshBasicMaterial color="#fffbeb" toneMapped={false} />
         </Sphere>
-        {/* High-Power Omnidirectional Solar Illumination (Boosted to 18) */}
-        <pointLight intensity={18} distance={85000} color="#fff1db" />
+        {/* High-Power Omnidirectional Solar Illumination */}
+        <pointLight intensity={24} distance={150000} decay={0.25} color="#fff1db" />
         {/* Inner Solar Corona Flare Shell */}
-        <Sphere args={[1380, 48, 48]}>
-          <meshBasicMaterial color="#fbbf24" transparent opacity={0.55} />
+        <Sphere args={[1980, 48, 48]} frustumCulled={false}>
+          <meshBasicMaterial color="#fbbf24" transparent opacity={0.58} depthWrite={false} toneMapped={false} />
         </Sphere>
         {/* Middle Solar Flare Chromosphere */}
-        <Sphere args={[1850, 32, 32]}>
-          <meshBasicMaterial color="#f59e0b" transparent opacity={0.25} />
+        <Sphere args={[2350, 32, 32]} frustumCulled={false}>
+          <meshBasicMaterial color="#f59e0b" transparent opacity={0.26} depthWrite={false} toneMapped={false} />
         </Sphere>
-        {/* Far Extended Cosmic Coronal Halo */}
-        <Sphere args={[2600, 24, 24]}>
-          <meshBasicMaterial color="#d97706" transparent opacity={0.12} />
+        {/* Extended Cosmic Coronal Halo */}
+        <Sphere args={[2950, 24, 24]} frustumCulled={false}>
+          <meshBasicMaterial color="#ea580c" transparent opacity={0.13} depthWrite={false} toneMapped={false} />
         </Sphere>
-        <Text position={[0, 1450, 0]} fontSize={110} color="white" outlineWidth={2} outlineColor="#000000">
+        {/* Ultra-Wide Far Solar Glow (keeps Sun visible even from outer planets) */}
+        <Sphere args={[3800, 20, 20]} frustumCulled={false}>
+          <meshBasicMaterial color="#f97316" transparent opacity={0.07} depthWrite={false} toneMapped={false} />
+        </Sphere>
+        <Text
+          position={[0, 2150, 0]}
+          fontSize={155}
+          color="#fef3c7"
+          outlineWidth={3}
+          outlineColor="#000000"
+          frustumCulled={false}
+        >
           SOL • CENTRO DO SISTEMA SOLAR
         </Text>
       </group>
@@ -778,28 +749,14 @@ export function SpaceScene() {
           <group key={p.id} position={p.pos}>
             {/* Primary Planetary Sphere with Specialized Realism Textures */}
             {isEarth ? (
-              <group>
-                {/* Realistic Earth Body with Continents & Oceans */}
-                <Sphere args={[p.visualRadius, 64, 64]}>
-                  <meshStandardMaterial
-                    map={earthMap || undefined}
-                    color="#ffffff"
-                    roughness={0.65}
-                    metalness={0.08}
-                  />
-                </Sphere>
-                {/* Rotating Swirling Translucent Cloud Layer */}
-                <mesh ref={earthCloudsRef}>
-                  <sphereGeometry args={[p.visualRadius * 1.018, 48, 48]} />
-                  <meshStandardMaterial
-                    map={cloudMap || undefined}
-                    transparent
-                    opacity={0.55}
-                    depthWrite={false}
-                    color="#ffffff"
-                  />
-                </mesh>
-              </group>
+              <RealisticEarthGlobe
+                radius={p.visualRadius}
+                sunDirection={[-p.pos.x, -p.pos.y, -p.pos.z]}
+                rotationSpeed={0.012}
+                cloudSpeed={0.020}
+                earthshine={0.08}
+                segments={64}
+              />
             ) : isJupiter ? (
               <Sphere args={[p.visualRadius, 64, 64]}>
                 <meshStandardMaterial
@@ -846,15 +803,17 @@ export function SpaceScene() {
               </Sphere>
             )}
 
-            {/* Glowing Atmospheric Aura / Translucent Atmosphere Shell */}
-            <Sphere args={[p.visualRadius * 1.06, 36, 36]}>
-              <meshBasicMaterial
-                color={p.atmosphereColor}
-                transparent
-                opacity={0.20}
-                depthWrite={false}
-              />
-            </Sphere>
+            {/* Glowing Atmospheric Aura / Translucent Atmosphere Shell (Earth uses Rayleigh Fresnel shader) */}
+            {!isEarth && (
+              <Sphere args={[p.visualRadius * 1.06, 36, 36]}>
+                <meshBasicMaterial
+                  color={p.atmosphereColor}
+                  transparent
+                  opacity={0.20}
+                  depthWrite={false}
+                />
+              </Sphere>
+            )}
 
             {/* Saturn / Gas Giant Rings */}
             {isSaturn && (
@@ -927,13 +886,15 @@ export function SpaceScene() {
             thrustLevel={rcsState.thrust}
             rcsPitch={rcsState.pitch}
             rcsYaw={rcsState.yaw}
+            solarHeatPct={solarState.heatPct}
+            isEvaporating={solarState.isEvaporating}
           />
         </group>
 
         {/* Space Flight Cockpit Telemetry & Orbital Status HUD */}
         <group position={[0, -2.4, -6]}>
           <Text fontSize={0.34} color="#38bdf8" outlineWidth={0.04} outlineColor="#020617">
-            {`VELOCIDADE: ${telemetry.speed} m/s • ALVO: ${telemetry.target.toUpperCase()} (${telemetry.distKm} km)`}
+            {`VELOCIDADE: ${telemetry.speed} km/h • ALVO: ${telemetry.target.toUpperCase()} (${telemetry.distKm} km)`}
           </Text>
           {stagingProgress < 1.0 ? (
             <group position={[0, -0.42, 0]}>

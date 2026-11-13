@@ -599,14 +599,14 @@ export function ComputerBookLibraryModal() {
         </div>
 
         {/* Main Content Area */}
-        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
-          {/* Left Sidebar: Book Selection List (Always visible on Desktop, or Full View when no book is selected on Mobile) */}
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col lg:flex-row">
+          {/* Left Sidebar: Book Selection List (Always visible on Desktop, or Full Scrollable View when no book is selected on Mobile) */}
           <div
             className={`${
-              activeBook ? 'hidden lg:flex lg:w-80 xl:w-96' : 'flex w-full'
-            } flex-col border-r border-white/10 bg-slate-900/50 overflow-y-auto p-4 sm:p-5 gap-3.5 shrink-0`}
+              activeBook ? 'hidden lg:flex lg:w-80 xl:w-96 lg:min-h-0 lg:shrink-0' : 'flex flex-1 min-h-0 w-full'
+            } flex-col border-r border-white/10 bg-slate-900/50 overflow-y-auto overscroll-contain p-4 sm:p-5 gap-3.5 pb-10`}
           >
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-1 shrink-0">
               <span className="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold flex items-center gap-1.5">
                 <BookOpen className="w-4 h-4 text-cyan-400" />
                 Catálogo de Livros Científicos
@@ -622,7 +622,7 @@ export function ComputerBookLibraryModal() {
                 <button
                   key={book.id}
                   onClick={() => handleSelectBook(book.id)}
-                  className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer group relative overflow-hidden ${
+                  className={`w-full shrink-0 text-left p-4 rounded-2xl border transition-all cursor-pointer group relative overflow-hidden ${
                     isSelected
                       ? 'bg-gradient-to-br from-slate-800/95 to-cyan-950/70 border-cyan-400 shadow-lg shadow-cyan-500/15 ring-1 ring-cyan-400/50'
                       : 'bg-slate-900/80 hover:bg-slate-800/85 border-white/10 hover:border-cyan-400/40'
@@ -663,7 +663,7 @@ export function ComputerBookLibraryModal() {
 
           {/* Right Reader Area: Shown when a book is selected */}
           {activeBook ? (
-            <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-slate-950">
               {/* Reader Sub-Header: Mode Switcher (PDF Original vs Resumo dos Capítulos) + Page Controls */}
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-900/90 border-b border-white/10 shrink-0">
                 <div className="flex items-center gap-1.5">

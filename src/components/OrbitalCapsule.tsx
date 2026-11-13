@@ -11,6 +11,8 @@ interface OrbitalCapsuleProps {
   thrustLevel?: number; // 0.0 to 1.0+ normalized propulsion intensity
   rcsPitch?: number; // -1 to 1
   rcsYaw?: number; // -1 to 1
+  solarHeatPct?: number; // 0 to 100 solar thermal proximity
+  isEvaporating?: boolean; // true while evaporating near the Sun
 }
 
 /**
@@ -32,10 +34,13 @@ export function OrbitalCapsule({
   thrustLevel = 0.5,
   rcsPitch = 0,
   rcsYaw = 0,
+  solarHeatPct = 0,
+  isEvaporating = false,
 }: OrbitalCapsuleProps) {
   const solarWingsRef = useRef<Group>(null);
   const dishRef = useRef<Group>(null);
   const plumeRef = useRef<Group>(null);
+  const evapShellRef = useRef<Group>(null);
 
   useFrame((state) => {
     const t = state.clock.getElapsedTime();
@@ -55,13 +60,42 @@ export function OrbitalCapsule({
       const radialScale = MathUtils.lerp(0.85, 1.25, Math.min(1.2, thrustLevel)) * flicker;
       plumeRef.current.scale.set(radialScale, lengthScale, radialScale);
     }
+    if (evapShellRef.current && (solarHeatPct > 0 || isEvaporating)) {
+      const pulse = isEvaporating ? 1.15 + Math.sin(t * 28) * 0.25 : 1.0 + Math.sin(t * 14) * 0.06;
+      evapShellRef.current.scale.setScalar(pulse);
+    }
   });
 
   const isStaging = stagingProgress < 1.0;
   const rcsActive = Math.abs(rcsPitch) > 0.08 || Math.abs(rcsYaw) > 0.08;
+  const heatAlpha = isEvaporating ? 0.72 : MathUtils.clamp((solarHeatPct / 100) * 0.45, 0, 0.5);
 
   return (
     <group>
+      {(solarHeatPct > 5 || isEvaporating) && (
+        <group ref={evapShellRef}>
+          <mesh>
+            <sphereGeometry args={[2.75, 24, 24]} />
+            <meshBasicMaterial
+              color={isEvaporating ? '#fff7ed' : '#f97316'}
+              transparent
+              opacity={heatAlpha}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+          <mesh>
+            <sphereGeometry args={[3.45, 20, 20]} />
+            <meshBasicMaterial
+              color="#ea580c"
+              transparent
+              opacity={heatAlpha * 0.55}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
+      )}
       {/* ============================================================== */}
       {/* 1. CINEMATIC DESENCAPSULAMENTO (FAIRING JETTISON & BOOSTER)    */}
       {/* Renders jettisoning fairing halves and drifting booster stage   */}

@@ -137,11 +137,11 @@ const EARTH_RESOURCE_NODES: WorldNode[] = [
     yieldAmount: 3,
   },
 
-  // Hazardous Radioactive & Toxic Deposits (Harm Suit Protection & Drain Water/O2 ONLY when passing nearby!)
+  // Hazardous Radioactive & Toxic Deposits (Strictly away from Rocket Runway X:10..235, Z:-25..25)
   {
     id: 'node-uranium-hazard-1',
     resourceId: 'uranium_ore',
-    position: [32, 0.45, 24],
+    position: [56, 0.45, 62],
     rotation: [0.1, 0.9, 0],
     scale: 1.25,
     yieldAmount: 1,
@@ -149,7 +149,7 @@ const EARTH_RESOURCE_NODES: WorldNode[] = [
   {
     id: 'node-uranium-hazard-2',
     resourceId: 'uranium_ore',
-    position: [115, 0.45, 34],
+    position: [122, 0.45, 68],
     rotation: [-0.1, 1.7, 0.1],
     scale: 1.25,
     yieldAmount: 1,
@@ -157,7 +157,7 @@ const EARTH_RESOURCE_NODES: WorldNode[] = [
   {
     id: 'node-toxic-sulfur-1',
     resourceId: 'toxic_sulfur',
-    position: [55, 0.35, -62],
+    position: [64, 0.35, -72],
     rotation: [0, 0.6, 0],
     scale: 1.2,
     yieldAmount: 2,
@@ -165,7 +165,7 @@ const EARTH_RESOURCE_NODES: WorldNode[] = [
   {
     id: 'node-toxic-sulfur-2',
     resourceId: 'toxic_sulfur',
-    position: [76, 0.4, -12],
+    position: [138, 0.4, -60],
     rotation: [0.1, 2.2, 0],
     scale: 1.2,
     yieldAmount: 2,
@@ -319,14 +319,15 @@ export const WorldResources = React.memo(function WorldResources() {
       setNearestNode(closest);
     }
 
-    // Apply Suit Protection (health) & Water/O2 (oxygen) drain ONLY while near hazard resource
+    // Apply Suit Protection (health) & Water/O2 (oxygen) drain when near or touching hazard resource
     if (nearestHazard) {
       const clampedDt = Math.min(delta, 0.1);
-      const intensity = Math.max(0.35, 1 - nearestHazard.distance / 5.2);
+      const isDirectTouch = nearestHazard.distance < 1.65;
+      const intensity = isDirectTouch ? 2.4 : Math.max(0.4, 1 - nearestHazard.distance / 5.2);
       if (nearestHazard.type === 'radiation') {
-        store.applyHazardDrain(clampedDt * 6.5 * intensity, clampedDt * 4.5 * intensity);
+        store.applyHazardDrain(clampedDt * 9.5 * intensity, clampedDt * 7.5 * intensity);
       } else {
-        store.applyHazardDrain(clampedDt * 4.0 * intensity, clampedDt * 7.5 * intensity);
+        store.applyHazardDrain(clampedDt * 7.5 * intensity, clampedDt * 9.5 * intensity);
       }
 
       hazardReportTimerRef.current += clampedDt;
@@ -348,7 +349,8 @@ export const WorldResources = React.memo(function WorldResources() {
     markNodeCollected(node.id);
     playPickupChime();
 
-    // Immediate field protection / hydration / O2 boost when collecting beneficial resources
+    // Immediate field protection / hydration / O2 boost when collecting beneficial resources,
+    // or immediate heavy toxic/radiation hit when collecting hazardous deposits!
     if (node.resourceId === 'suit_nanopolymer') {
       store.applyLifeSupportBoost(35, 10, 150);
     } else if (node.resourceId === 'ggpen_composite') {
@@ -359,7 +361,11 @@ export const WorldResources = React.memo(function WorldResources() {
       store.applyLifeSupportBoost(5, 25);
     } else if (node.resourceId === 'oxygen_canister') {
       store.applyLifeSupportBoost(0, 45);
-    } else if (node.resourceId === 'uranium_ore' || node.resourceId === 'toxic_sulfur') {
+    } else if (node.resourceId === 'uranium_ore') {
+      store.applyToxicHit(38, 30);
+      store.setActiveHazard(null);
+    } else if (node.resourceId === 'toxic_sulfur') {
+      store.applyToxicHit(32, 36);
       store.setActiveHazard(null);
     }
 

@@ -67,22 +67,6 @@ export function PlanetaryCapsuleLander({ isLaunching = false }: PlanetaryCapsule
           </mesh>
         ))}
 
-        {/* Crew EVA Egress Ladder on Front Face (+Z) from Descent Deck to Planetary Surface */}
-        <group position={[0, 0.98, 2.82]} rotation={[-0.18, 0, 0]}>
-          {[-0.26, 0.26].map((lx, li) => (
-            <mesh key={`eva-ladder-rail-${li}`} position={[lx, 0, 0]} castShadow>
-              <cylinderGeometry args={[0.028, 0.028, 2.05, 8]} />
-              <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.2} />
-            </mesh>
-          ))}
-          {Array.from({ length: 6 }).map((_, ri) => (
-            <mesh key={`eva-rung-${ri}`} position={[0, -0.78 + ri * 0.31, 0]} rotation={[0, 0, Math.PI / 2]}>
-              <cylinderGeometry args={[0.018, 0.018, 0.52, 8]} />
-              <meshStandardMaterial color="#eab308" metalness={0.8} roughness={0.25} />
-            </mesh>
-          ))}
-        </group>
-
         {/* 4 Articulated Hydraulic Landing Gear Assemblies Seated Flush on Ground (Y = 0) */}
         {/* Each leg connects directly from its Outrigger Mount on the Octagonal Stage (r=2.45) to the Footpad (r=3.65) */}
         {[Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4].map((rotY, i) => (

@@ -10,6 +10,7 @@ import {
   Scale,
   CheckCircle2,
   Compass,
+  Trash2,
 } from 'lucide-react';
 import { useGameStore, PLANETS } from '../store';
 import {
@@ -57,8 +58,10 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
     return itemsList.filter((item) => item.def.category === activeCategory);
   }, [itemsList, activeCategory]);
 
-  const selectedDef = RESOURCE_DEFINITIONS[selectedItemId] || itemsList[0]?.def || RESOURCE_DEFINITIONS.quartz;
-  const selectedCount = inventory[selectedDef.id] || 0;
+  const activeSelectedEntry =
+    filteredItems.find((item) => item.def.id === selectedItemId) || filteredItems[0] || null;
+  const selectedDef = activeSelectedEntry?.def || null;
+  const selectedCount = activeSelectedEntry?.count || 0;
 
   // Use consumable item (water, oxygen, or protective armor kits)
   const handleUseItem = (itemId: string) => {
@@ -84,6 +87,10 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
         store.applyLifeSupportBoost(20, 0);
       }
     }
+  };
+
+  const handleDiscardItem = (itemId: string, amount: number) => {
+    useGameStore.getState().removeInventoryItem(itemId, amount);
   };
 
   return (
@@ -278,7 +285,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
             {/* Slot Grid */}
             <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
               {filteredItems.map(({ def, count }) => {
-                const isSelected = def.id === selectedDef.id;
+                const isSelected = selectedDef?.id === def.id;
                 return (
                   <button
                     key={def.id}
@@ -382,6 +389,28 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
                       ? 'Instalar Blindagem GGPEN (+30% Traje)'
                       : 'Reforçar Fato com Titânio (+20% Traje)'}
                   </button>
+                )}
+
+                {/* Remove / Discard Resource Controls */}
+                {selectedCount > 0 && (
+                  <div className="flex gap-2 mt-1">
+                    <button
+                      onClick={() => handleDiscardItem(selectedDef.id, 1)}
+                      className="flex-1 py-2 px-3 rounded-xl bg-rose-950/70 hover:bg-rose-900/80 border border-rose-500/40 text-rose-200 hover:text-white text-[11px] font-bold uppercase tracking-wider transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Remover 1</span>
+                    </button>
+                    {selectedCount > 1 && (
+                      <button
+                        onClick={() => handleDiscardItem(selectedDef.id, selectedCount)}
+                        className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-rose-950/90 border border-rose-500/30 text-rose-300 hover:text-white text-[11px] font-bold uppercase tracking-wider transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Descartar ({selectedCount})</span>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}

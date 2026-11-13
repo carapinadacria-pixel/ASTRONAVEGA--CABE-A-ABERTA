@@ -7,7 +7,15 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { RigidBody, CapsuleCollider, RapierRigidBody, useRapier } from '@react-three/rapier';
 import { AstronautCharacter } from './AstronautCharacter';
 import { carVisualGroups } from './RealisticCars';
-import { playWaterSplashSound, playWaterWadeSound, playCarCrashSound } from '../audio';
+import {
+  playWaterSplashSound,
+  playWaterWadeSound,
+  playCarCrashSound,
+  updateSpatialAudio,
+  updateCarAudio,
+  setAudioEnvironment,
+  playAstronautDeathSound,
+} from '../audio';
 import { getOceanWaveHeight } from './CoastalOcean';
 
 interface PlayerProps {
@@ -213,6 +221,10 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
   const isUserOrbiting = useRef<boolean>(false);
   const lastUserOrbitTime = useRef<number>(0);
   const lastCarCrashTime = useRef<number>(0);
+  const lastFuelWarnTime = useRef<number>(0);
+  const lastHandledRespawnAt = useRef<number | null>(useGameStore.getState().lastRespawnAt);
+  const dyingTimerRef = useRef<number>(0);
+  const isDying = useGameStore((state) => state.isDying);
   const carCamYawRef = useRef<number | null>(null);
   const carCockpitPitchRef = useRef<number>(0);
   const carCockpitYawRef = useRef<number>(0);
@@ -336,6 +348,38 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
     };
   }, []);
 
+  // Reposition player cleanly when landing on another planet or returning to Earth
+  useEffect(() => {
+    if (!rb.current || !group.current) return;
+    const spawnPos: [number, number, number] = planetIndex === 0 ? [255, 1.2, 5] : [0, 1.2, 9.5];
+    rb.current.setGravityScale(1.0, true);
+    rb.current.setTranslation({ x: spawnPos[0], y: spawnPos[1], z: spawnPos[2] }, true);
+    rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    group.current.position.set(spawnPos[0], spawnPos[1] - 0.93, spawnPos[2]);
+    group.current.rotation.set(0, 0, 0);
+    group.current.scale.set(1, 1, 1);
+    prevNearRocket.current = false;
+    useGameStore.getState().setIsNearRocket(false);
+    prevCamPlayerPos.current = new Vector3(spawnPos[0], spawnPos[1] + 0.25, spawnPos[2]);
+    camera.up.set(0, 1, 0);
+    camera.position.set(spawnPos[0], spawnPos[1] + 1.4, spawnPos[2] + 5.0);
+    if (controlsRef.current) {
+      controlsRef.current.target.set(spawnPos[0], spawnPos[1] + 0.25, spawnPos[2]);
+      controlsRef.current.update();
+    }
+  }, [planetIndex, camera]);
+
+  // Synchronize surface acoustic environment per planet & mute vehicle engine on unmount
+  useEffect(() => {
+    setAudioEnvironment('surface', planetIndex);
+  }, [planetIndex]);
+
+  useEffect(() => {
+    return () => {
+      updateCarAudio(false, 0, 0, false, false);
+    };
+  }, []);
+
   // Allow free vertical & horizontal look inside the 1st-person car cockpit (so user can look up at the interior roof/ceiling!)
   useEffect(() => {
     if (!drivingCarId || cameraMode !== 'first') {
@@ -403,6 +447,142 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
     const isMobileSprint = storeState.mobileSprint;
     const safeDelta = Math.min(delta, 0.05);
 
+    // Tick hydration/oxygen/chamber countdown & handle death fall animation or rocket crash respawn
+    storeState.tickLifeSupport(safeDelta);
+    const liveStateAfterTick = useGameStore.getState();
+    const externalRespawnTriggered =
+      liveStateAfterTick.lastRespawnAt !== null &&
+      liveStateAfterTick.lastRespawnAt !== lastHandledRespawnAt.current;
+
+    if (externalRespawnTriggered) {
+      if (prevDrivingCarId.current) {
+        const crashedCar = storeState.carStates[prevDrivingCarId.current];
+        if (crashedCar) {
+          crashedCar.speed = 0;
+          crashedCar.steer = 0;
+        }
+        prevDrivingCarId.current = null;
+      }
+      updateCarAudio(false, 0, 0, false, false);
+      const postRespawnState = useGameStore.getState();
+      lastHandledRespawnAt.current = postRespawnState.lastRespawnAt;
+      const [rx, ry, rz] = postRespawnState.respawnTargetPosition;
+      rb.current.setGravityScale(1.0, true);
+      rb.current.setTranslation({ x: rx, y: ry, z: rz }, true);
+      rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      group.current.position.set(rx, ry - 0.93, rz);
+      group.current.rotation.set(0, 0, 0);
+      group.current.scale.set(1, 1, 1);
+      if (bodyRef.current) {
+        bodyRef.current.rotation.set(0, 0, 0);
+        bodyRef.current.position.set(0, 0, 0);
+        bodyRef.current.visible = cameraMode === 'third';
+      }
+      if (actionNameRef.current !== 'idle') {
+        actionNameRef.current = 'idle';
+        setActionName('idle');
+      }
+      carCamYawRef.current = null;
+      prevCamPlayerPos.current = new Vector3(rx, ry + 0.25, rz);
+      camera.up.set(0, 1, 0);
+      camera.position.set(rx, ry + 1.3, rz + 4.2);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(rx, ry + 0.25, rz);
+        controlsRef.current.update();
+      }
+      return;
+    }
+
+    if (liveStateAfterTick.health <= 0 && !liveStateAfterTick.isDying) {
+      if (prevDrivingCarId.current) {
+        const parkedCar = storeState.carStates[prevDrivingCarId.current];
+        if (parkedCar) {
+          parkedCar.speed = 0;
+          parkedCar.steer = 0;
+        }
+        prevDrivingCarId.current = null;
+      }
+      updateCarAudio(false, 0, 0, false, false);
+      const reason =
+        liveStateAfterTick.planetIndex !== 0 && !liveStateAfterTick.isOxygenChamberOpen
+          ? 'oxygen_chamber'
+          : 'hazard';
+      liveStateAfterTick.startDying(reason);
+      dyingTimerRef.current = 0;
+      playAstronautDeathSound();
+    }
+
+    if (useGameStore.getState().isDying) {
+      dyingTimerRef.current += safeDelta;
+      const curPos = rb.current.translation();
+      const curVel = rb.current.linvel();
+      rb.current.setGravityScale(1.0, true);
+      rb.current.setLinvel({ x: 0, y: Math.min(0, curVel.y), z: 0 }, true);
+      group.current.position.set(curPos.x, curPos.y - 0.93, curPos.z);
+      group.current.scale.set(1, 1, 1);
+
+      if (actionNameRef.current !== 'dead') {
+        actionNameRef.current = 'dead';
+        setActionName('dead');
+      }
+
+      if (bodyRef.current) {
+        bodyRef.current.visible = true;
+        bodyRef.current.rotation.order = 'YXZ';
+        bodyRef.current.rotation.x = MathUtils.damp(bodyRef.current.rotation.x, -Math.PI / 2, 7.5, safeDelta);
+        bodyRef.current.rotation.z = MathUtils.damp(bodyRef.current.rotation.z, 0.14, 6.0, safeDelta);
+        bodyRef.current.position.y = MathUtils.damp(bodyRef.current.position.y, 0.24, 7.5, safeDelta);
+      }
+
+      // Ensure player sees the astronaut collapse even when in 1st-person mode
+      const camTargetX = curPos.x;
+      const camTargetY = curPos.y - 0.35;
+      const camTargetZ = curPos.z;
+      camera.up.set(0, 1, 0);
+      if (cameraMode === 'first') {
+        camera.position.set(
+          MathUtils.damp(camera.position.x, curPos.x + 1.85, 6.0, safeDelta),
+          MathUtils.damp(camera.position.y, curPos.y + 1.45, 6.0, safeDelta),
+          MathUtils.damp(camera.position.z, curPos.z + 2.35, 6.0, safeDelta)
+        );
+      }
+      camera.lookAt(camTargetX, camTargetY, camTargetZ);
+      if (controlsRef.current) {
+        controlsRef.current.target.set(camTargetX, camTargetY, camTargetZ);
+        controlsRef.current.update();
+      }
+
+      if (dyingTimerRef.current >= 2.2) {
+        dyingTimerRef.current = 0;
+        useGameStore.getState().completeDeathRespawn();
+        const postRespawnState = useGameStore.getState();
+        lastHandledRespawnAt.current = postRespawnState.lastRespawnAt;
+        const [rx, ry, rz] = postRespawnState.respawnTargetPosition;
+        rb.current.setGravityScale(1.0, true);
+        rb.current.setTranslation({ x: rx, y: ry, z: rz }, true);
+        rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        group.current.position.set(rx, ry - 0.93, rz);
+        group.current.rotation.set(0, 0, 0);
+        group.current.scale.set(1, 1, 1);
+        if (bodyRef.current) {
+          bodyRef.current.rotation.set(0, 0, 0);
+          bodyRef.current.position.set(0, 0, 0);
+          bodyRef.current.visible = cameraMode === 'third';
+        }
+        actionNameRef.current = 'idle';
+        setActionName('idle');
+        carCamYawRef.current = null;
+        prevCamPlayerPos.current = new Vector3(rx, ry + 0.25, rz);
+        camera.up.set(0, 1, 0);
+        camera.position.set(rx, ry + 1.3, rz + 4.2);
+        if (controlsRef.current) {
+          controlsRef.current.target.set(rx, ry + 0.25, rz);
+          controlsRef.current.update();
+        }
+      }
+      return;
+    }
+
     const inputForward = (forward ? 1 : 0) - (backward ? 1 : 0) + (joystick?.y || 0);
     const inputRight = (right ? 1 : 0) - (left ? 1 : 0) + (joystick?.x || 0);
     const isSprintKey = Boolean(sprint) || isMobileSprint;
@@ -432,6 +612,7 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
         setActionName('idle');
       }
       storeState.setCarSpeedKmh(0);
+      updateCarAudio(false, 0, 0, false, false);
       prevDrivingCarId.current = null;
       carCamYawRef.current = null;
     } else if (activeCarId) {
@@ -506,6 +687,9 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
           }
           if (Math.abs(car.speed) < 0.04) car.speed = 0;
         }
+
+        // Real-time vehicle acceleration & brake friction sound
+        updateCarAudio(true, car.speed, throttle, isBraking, isSprintKey);
 
         // Smooth front wheel steering angle & Ackermann yaw rotation with high-speed stability damping
         const highSpeedSteerDamp = 1.0 - Math.min(0.32, (Math.abs(car.speed) / maxCarSpeed) * 0.32);
@@ -780,10 +964,11 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
     const playerPos = rb.current.translation();
     if (!playerPos || playerPos.x === undefined) return;
 
-    // Safety Respawn inside the Hangar if fallen below world
+    // Safety Respawn inside the Hangar (Earth) or landing zone (other planets) if fallen below world
     if (playerPos.y < -25) {
+      const [fx, fy, fz] = planetIndex === 0 ? [255, 1.2, 5] : [0, 1.2, 9.5];
       rb.current.setGravityScale(1.0, true);
-      rb.current.setTranslation({ x: 255, y: 1.2, z: 5 }, true);
+      rb.current.setTranslation({ x: fx, y: fy, z: fz }, true);
       rb.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
       return;
     }
@@ -808,33 +993,46 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
     }
 
     // Proximity & Touch Detection for Rocket / Planetary Capsule Lander
-    // Astronaut must be on the Launch Pad close to the rocket to board with [R], or touch it directly to board automatically!
+    // Astronaut must be genuinely close to the capsule lander to board with [R] or by touching it
     const rocketHorizDist = Math.hypot(playerPos.x, playerPos.z);
     const isNearRocketNow =
       planetIndex === 0
         ? rocketHorizDist < 9.5 && playerPos.y >= 4.2
-        : rocketHorizDist < 8.5;
+        : rocketHorizDist < 4.8;
     if (isNearRocketNow !== prevNearRocket.current) {
       prevNearRocket.current = isNearRocketNow;
       storeState.setIsNearRocket(isNearRocketNow);
     }
 
-    // Auto-board rocket when astronaut walks up and touches the rocket base / lander boarding threshold
+    // Auto-board rocket when astronaut walks up and touches the rocket base / lander hull
     const isTouchingRocket =
       planetIndex === 0
         ? rocketHorizDist < 5.7 && playerPos.y >= 4.2 && isMoving
-        : rocketHorizDist < 3.8 && isMoving;
+        : rocketHorizDist < 3.15 && isMoving;
     if (isTouchingRocket && !storeState.isLaunching) {
       if (planetIndex === 0) {
-        storeState.setLaunchTelemetry({
-          countdown: 5,
-          fuel: 100,
-          speed: 0,
-          altitude: 0,
-          status: 'countdown',
-        });
+        if (storeState.rocketFuel <= 0) {
+          const nowMs = performance.now();
+          if (nowMs - lastFuelWarnTime.current > 2500) {
+            lastFuelWarnTime.current = nowMs;
+            storeState.setLaunchFailureMsg('Foguete sem combustível (0%)! Pressione "Abastecer Foguete" no painel.');
+          }
+        } else {
+          const f = storeState.rocketFuel;
+          storeState.setLaunchFailureMsg(null);
+          storeState.setLaunchTelemetry({
+            countdown: 5,
+            fuel: Math.round(f),
+            speed: 0,
+            altitude: 0,
+            weightTons: Math.round(420 + f * 25.5),
+            status: 'countdown',
+          });
+          storeState.setLaunching(true);
+        }
+      } else {
+        storeState.setLaunching(true);
       }
-      storeState.setLaunching(true);
     }
 
     // Proximity to Driveable Cars check (within 4.4m on Earth surface)
@@ -1316,6 +1514,15 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
     group.current.scale.set(1, 1, 1);
     prevJumpRef.current = effectiveJump;
 
+    // Spatial audio: Earth ocean/machinery fades out away from source; footsteps play on all planets
+    updateSpatialAudio(
+      [playerPos.x, playerPos.y, playerPos.z],
+      isMoving,
+      horizSpeed,
+      isGrounded,
+      isInWaterZone
+    );
+
     if (isLaunching) return;
 
     if (prevCameraMode.current !== cameraMode) {
@@ -1458,23 +1665,23 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
         colliders={false}
         enabledRotations={[false, false, false]}
         mass={isFemale ? 100 : 145}
-        position={[255, 1.2, 5]}
+        position={planetIndex === 0 ? [255, 1.2, 5] : [0, 1.2, 9.5]}
         ccd={true}
       >
         <CapsuleCollider args={[0.55, 0.38]} position={[0, 0, 0]} friction={0.8} />
       </RigidBody>
 
       {/* Unified World-Space Astronaut Group (Outside RigidBody so there is zero physics lag when seated in a car!) */}
-      <group ref={group} position={[255, 0.27, 5]}>
-        <group ref={bodyRef} visible={cameraMode === 'third'}>
+      <group ref={group} position={planetIndex === 0 ? [255, 0.27, 5] : [0, 0.27, 9.5]}>
+        <group ref={bodyRef} visible={isDying || cameraMode === 'third'}>
           <AstronautCharacter
             key={`${characterGender}-${suitStyle}`}
             gender={characterGender}
             visorMode={visorMode}
             suitStyle={suitStyle}
-            actionName={drivingCarId ? 'drive' : actionName}
+            actionName={drivingCarId ? 'drive' : isDying ? 'dead' : actionName}
             speed={drivingCarId ? 0 : inWater ? 2.8 : actionName === 'run' ? 17.0 : 8.8}
-            isJumping={!drivingCarId && actionName === 'jump'}
+            isJumping={!drivingCarId && !isDying && actionName === 'jump'}
           />
           {!drivingCarId &&
             (inWater ? (

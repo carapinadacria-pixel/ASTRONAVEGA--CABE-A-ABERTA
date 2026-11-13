@@ -1,10 +1,9 @@
 import React from 'react';
 import {
-  AngolaFlagDecal,
-  GGPENLogoDecal,
-  NasaSpaceAppsLuandaDecal,
-  AstronavegaLogoDecal,
-  CabecaAbertaLogoDecal,
+  CurvedAngolaFlagDecal,
+  CurvedGGPENLogoDecal,
+  CurvedAstronavegaLogoDecal,
+  CurvedCabecaAbertaLogoDecal,
 } from './AngolaFlag';
 
 
@@ -74,14 +73,48 @@ export function RocketModel({ isFlying = false }: { isFlying?: boolean }) {
       <mesh position={[0, 16.5, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[3.1, 3.2, 27, 32]} />
         <meshStandardMaterial color="#f8fafc" metalness={0.4} roughness={0.3} />
-        
-        {/* Front Side (+Z): Official National & Agency Insignias (GGPEN & Bandeira de Angola) */}
-        <GGPENLogoDecal position={[0, 3.2, 3.16]} rotation={[0, 0, 0]} scale={[2.0, 2.0, 1]} />
-        <AngolaFlagDecal position={[0, -1.8, 3.16]} rotation={[0, 0, 0]} scale={[2.7, 1.8, 1]} />
 
-        {/* Back Side (-Z): Mirrored Official Insignias for 360-degree Visibility */}
-        <GGPENLogoDecal position={[0, 3.2, -3.16]} rotation={[0, Math.PI, 0]} scale={[2.0, 2.0, 1]} />
-        <AngolaFlagDecal position={[0, -1.8, -3.16]} rotation={[0, Math.PI, 0]} scale={[2.7, 1.8, 1]} />
+        {/* Front Side (+Z) & Back Side (-Z): Curved Flush Official National & Agency Insignias */}
+        {/* At y=+3.2, cylinder radius = 3.138; at y=-1.8, radius = 3.157; slope = (3.2 - 3.1)/27 ≈ 0.0037 */}
+        <CurvedGGPENLogoDecal
+          position={[0, 3.2, 3.142]}
+          rotation={[0, 0, 0]}
+          width={3.25}
+          height={1.98}
+          radius={3.142}
+          slope={0.0037}
+          trimColor={null}
+          backingColor={null}
+        />
+        <CurvedAngolaFlagDecal
+          position={[0, -1.8, 3.160]}
+          rotation={[0, 0, 0]}
+          width={2.65}
+          height={1.72}
+          radius={3.160}
+          slope={0.0037}
+          trimColor="#1e293b"
+        />
+
+        <CurvedGGPENLogoDecal
+          position={[0, 3.2, -3.142]}
+          rotation={[0, Math.PI, 0]}
+          width={3.25}
+          height={1.98}
+          radius={3.142}
+          slope={0.0037}
+          trimColor={null}
+          backingColor={null}
+        />
+        <CurvedAngolaFlagDecal
+          position={[0, -1.8, -3.160]}
+          rotation={[0, Math.PI, 0]}
+          width={2.65}
+          height={1.72}
+          radius={3.160}
+          slope={0.0037}
+          trimColor="#1e293b"
+        />
       </mesh>
 
       {/* Cryogenic Pressurization Conduit & Systems Tunnel Raceways */}
@@ -199,19 +232,20 @@ export function RocketModel({ isFlying = false }: { isFlying?: boolean }) {
       <mesh position={[0, 39.5, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[2.85, 3.0, 15, 32]} />
         <meshStandardMaterial color="#f8fafc" metalness={0.35} roughness={0.35} />
-        {/* Stage 2 Official Partner & Educational Insignias (Astronavega & Cabeça Aberta) */}
+        {/* Stage 2 Official Partner & Educational Insignias curved flush around conical upper stage */}
+        {/* At y=+2.5, r = 2.900; at y=-1.6, r = 2.941; slope = (3.0 - 2.85)/15 = 0.01 */}
         {/* Front Side (+Z) */}
-        <AstronavegaLogoDecal position={[0, 2.5, 2.89]} rotation={[0, 0, 0]} scale={[2.2, 2.2, 1]} />
-        <CabecaAbertaLogoDecal position={[0, -1.6, 2.95]} rotation={[0, 0, 0]} scale={[2.3, 2.3, 1]} />
+        <CurvedAstronavegaLogoDecal position={[0, 2.5, 2.905]} rotation={[0, 0, 0]} width={2.05} height={2.24} radius={2.905} slope={0.01} />
+        <CurvedCabecaAbertaLogoDecal position={[0, -1.6, 2.946]} rotation={[0, 0, 0]} width={3.60} height={1.83} radius={2.946} slope={0.01} />
         {/* Back Side (-Z) */}
-        <AstronavegaLogoDecal position={[0, 2.5, -2.89]} rotation={[0, Math.PI, 0]} scale={[2.2, 2.2, 1]} />
-        <CabecaAbertaLogoDecal position={[0, -1.6, -2.95]} rotation={[0, Math.PI, 0]} scale={[2.3, 2.3, 1]} />
-        {/* Tower Facade Side (-X, facing Launch Tower Bridge) */}
-        <AstronavegaLogoDecal position={[-2.89, 2.5, 0]} rotation={[0, -Math.PI / 2, 0]} scale={[2.2, 2.2, 1]} />
-        <CabecaAbertaLogoDecal position={[-2.95, -1.6, 0]} rotation={[0, -Math.PI / 2, 0]} scale={[2.3, 2.3, 1]} />
+        <CurvedAstronavegaLogoDecal position={[0, 2.5, -2.905]} rotation={[0, Math.PI, 0]} width={2.05} height={2.24} radius={2.905} slope={0.01} />
+        <CurvedCabecaAbertaLogoDecal position={[0, -1.6, -2.946]} rotation={[0, Math.PI, 0]} width={3.60} height={1.83} radius={2.946} slope={0.01} />
+        {/* Tower Facade Side (-X) */}
+        <CurvedAstronavegaLogoDecal position={[-2.905, 2.5, 0]} rotation={[0, -Math.PI / 2, 0]} width={2.05} height={2.24} radius={2.905} slope={0.01} />
+        <CurvedCabecaAbertaLogoDecal position={[-2.946, -1.6, 0]} rotation={[0, -Math.PI / 2, 0]} width={3.60} height={1.83} radius={2.946} slope={0.01} />
         {/* Ocean Facade Side (+X) */}
-        <AstronavegaLogoDecal position={[2.89, 2.5, 0]} rotation={[0, Math.PI / 2, 0]} scale={[2.2, 2.2, 1]} />
-        <CabecaAbertaLogoDecal position={[2.95, -1.6, 0]} rotation={[0, Math.PI / 2, 0]} scale={[2.3, 2.3, 1]} />
+        <CurvedAstronavegaLogoDecal position={[2.905, 2.5, 0]} rotation={[0, Math.PI / 2, 0]} width={2.05} height={2.24} radius={2.905} slope={0.01} />
+        <CurvedCabecaAbertaLogoDecal position={[2.946, -1.6, 0]} rotation={[0, Math.PI / 2, 0]} width={3.60} height={1.83} radius={2.946} slope={0.01} />
       </mesh>
 
       {/* Stage 2 Umbilical Ground Interface (Connects to Tower Arm 2 at y=38) */}

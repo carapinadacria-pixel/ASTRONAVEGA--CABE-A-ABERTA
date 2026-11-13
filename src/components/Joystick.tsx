@@ -8,17 +8,22 @@ export function Joystick() {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const pointerIdRef = useRef<number | null>(null);
 
-  // State for directional arrow cross when driving a vehicle on mobile
-  const [pressedDirs, setPressedDirs] = useState({
+  // State for enlarged 6-button directional driving pad on mobile (↖, ▲, ↗ / ◀, ▼, ▶)
+  type DriveButtonKey = 'upLeft' | 'up' | 'upRight' | 'left' | 'down' | 'right';
+  const [pressedBtns, setPressedBtns] = useState<Record<DriveButtonKey, boolean>>({
+    upLeft: false,
     up: false,
-    down: false,
+    upRight: false,
     left: false,
+    down: false,
     right: false,
   });
-  const dirStateRef = useRef({
+  const btnStateRef = useRef<Record<DriveButtonKey, boolean>>({
+    upLeft: false,
     up: false,
-    down: false,
+    upRight: false,
     left: false,
+    down: false,
     right: false,
   });
 
@@ -29,26 +34,38 @@ export function Joystick() {
   }, []);
 
   const syncDirectionalCrossToStore = useCallback(() => {
-    const d = dirStateRef.current;
-    const x = (d.right ? 1 : 0) - (d.left ? 1 : 0);
-    const y = (d.up ? 1 : 0) - (d.down ? 1 : 0);
+    const b = btnStateRef.current;
+    const goUp = b.up || b.upLeft || b.upRight;
+    const goDown = b.down;
+    const goLeft = b.left || b.upLeft;
+    const goRight = b.right || b.upRight;
+    const x = (goRight ? 1 : 0) - (goLeft ? 1 : 0);
+    const y = (goUp ? 1 : 0) - (goDown ? 1 : 0);
     updateGlobalJoystick(x, y);
   }, [updateGlobalJoystick]);
 
   // Reset directional buttons & analog stick whenever switching between walking and driving
   useEffect(() => {
-    dirStateRef.current = { up: false, down: false, left: false, right: false };
-    setPressedDirs({ up: false, down: false, left: false, right: false });
+    const empty: Record<DriveButtonKey, boolean> = {
+      upLeft: false,
+      up: false,
+      upRight: false,
+      left: false,
+      down: false,
+      right: false,
+    };
+    btnStateRef.current = { ...empty };
+    setPressedBtns({ ...empty });
     pointerIdRef.current = null;
     setActive(false);
     setPosition({ x: 0, y: 0 });
     updateGlobalJoystick(0, 0);
   }, [drivingCarId, updateGlobalJoystick]);
 
-  const setDirPressed = (dir: 'up' | 'down' | 'left' | 'right', isDown: boolean) => {
-    if (dirStateRef.current[dir] === isDown) return;
-    dirStateRef.current[dir] = isDown;
-    setPressedDirs({ ...dirStateRef.current });
+  const setDirPressed = (btnKey: DriveButtonKey, isDown: boolean) => {
+    if (btnStateRef.current[btnKey] === isDown) return;
+    btnStateRef.current[btnKey] = isDown;
+    setPressedBtns({ ...btnStateRef.current });
     syncDirectionalCrossToStore();
   };
 
@@ -140,16 +157,16 @@ export function Joystick() {
     };
   }, [updateGlobalJoystick]);
 
-  // WHEN DRIVING A CAR ON MOBILE: Render the 4-Arrow Directional Cross (Cima, Baixo, Esquerda, Direita)
+  // WHEN DRIVING A CAR ON MOBILE: Render the Enlarged 6-Button Precision Driving Pad (↖ ▲ ↗ / ◀ ▼ ▶)
   if (drivingCarId) {
-    const bindDirBtn = (dir: 'up' | 'down' | 'left' | 'right') => ({
+    const bindDirBtn = (btnKey: DriveButtonKey) => ({
       onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
         e.preventDefault();
         e.stopPropagation();
         try {
           e.currentTarget.setPointerCapture(e.pointerId);
         } catch {}
-        setDirPressed(dir, true);
+        setDirPressed(btnKey, true);
       },
       onPointerUp: (e: React.PointerEvent<HTMLButtonElement>) => {
         e.preventDefault();
@@ -157,79 +174,90 @@ export function Joystick() {
         try {
           e.currentTarget.releasePointerCapture(e.pointerId);
         } catch {}
-        setDirPressed(dir, false);
+        setDirPressed(btnKey, false);
       },
       onPointerCancel: (e: React.PointerEvent<HTMLButtonElement>) => {
         e.preventDefault();
         e.stopPropagation();
-        setDirPressed(dir, false);
+        setDirPressed(btnKey, false);
       },
       onPointerLeave: () => {
-        setDirPressed(dir, false);
+        setDirPressed(btnKey, false);
       },
     });
 
     const btnBase =
-      'w-10 h-10 sm:w-11 sm:h-11 rounded-xl border backdrop-blur-xl flex items-center justify-center touch-none select-none cursor-pointer transition-all';
+      'w-14 h-14 sm:w-16 sm:h-16 rounded-2xl border-2 backdrop-blur-xl flex items-center justify-center touch-none select-none cursor-pointer transition-all';
     const btnActive =
-      'bg-cyan-500/85 border-cyan-300 text-slate-950 shadow-[0_0_16px_rgba(6,182,212,0.7)] scale-95 font-black';
+      'bg-cyan-500/90 border-cyan-200 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.85)] scale-95 font-black';
     const btnIdle =
-      'bg-slate-950/85 border-slate-600/80 text-cyan-200 hover:border-cyan-400/70 shadow-lg font-bold';
+      'bg-slate-950/90 border-slate-500/80 text-cyan-100 hover:border-cyan-400 shadow-xl font-bold';
+    const btnAuxIdle =
+      'bg-slate-900/90 border-cyan-500/45 text-cyan-300 hover:border-cyan-300 shadow-lg font-bold';
 
     return (
-      <div className="w-32 h-32 sm:w-36 sm:h-36 relative flex items-center justify-center touch-none select-none">
-        {/* CIMA (Accelerate Forward) */}
+      <div className="grid grid-cols-3 gap-2 p-2 rounded-3xl bg-slate-950/55 border border-white/10 backdrop-blur-md touch-none select-none shadow-2xl">
+        {/* TOP ROW: Auxiliary Forward-Left (↖), Accelerate Forward (▲), Auxiliary Forward-Right (↗) */}
+        <button
+          type="button"
+          aria-label="Frente e Esquerda"
+          title="Ir para Frente + Virar Esquerda"
+          {...bindDirBtn('upLeft')}
+          className={`${btnBase} ${pressedBtns.upLeft ? btnActive : btnAuxIdle}`}
+        >
+          <span className="text-xl sm:text-2xl leading-none">↖</span>
+        </button>
+
         <button
           type="button"
           aria-label="Cima - Acelerar"
+          title="Ir para Frente"
           {...bindDirBtn('up')}
-          className={`absolute top-0 left-1/2 -translate-x-1/2 ${btnBase} ${
-            pressedDirs.up ? btnActive : btnIdle
-          }`}
+          className={`${btnBase} ${pressedBtns.up ? btnActive : btnIdle}`}
         >
-          <span className="text-base sm:text-lg leading-none">▲</span>
+          <span className="text-xl sm:text-2xl leading-none">▲</span>
         </button>
 
-        {/* BAIXO (Brake / Reverse) */}
         <button
           type="button"
-          aria-label="Baixo - Travar / Marcha-atrás"
-          {...bindDirBtn('down')}
-          className={`absolute bottom-0 left-1/2 -translate-x-1/2 ${btnBase} ${
-            pressedDirs.down ? btnActive : btnIdle
-          }`}
+          aria-label="Frente e Direita"
+          title="Ir para Frente + Virar Direita"
+          {...bindDirBtn('upRight')}
+          className={`${btnBase} ${pressedBtns.upRight ? btnActive : btnAuxIdle}`}
         >
-          <span className="text-base sm:text-lg leading-none">▼</span>
+          <span className="text-xl sm:text-2xl leading-none">↗</span>
         </button>
 
-        {/* ESQUERDA (Steer Left) */}
+        {/* BOTTOM ROW: Steer Left (◀), Brake/Reverse (▼), Steer Right (▶) */}
         <button
           type="button"
           aria-label="Esquerda - Virar à Esquerda"
+          title="Virar Esquerda"
           {...bindDirBtn('left')}
-          className={`absolute left-0 top-1/2 -translate-y-1/2 ${btnBase} ${
-            pressedDirs.left ? btnActive : btnIdle
-          }`}
+          className={`${btnBase} ${pressedBtns.left ? btnActive : btnIdle}`}
         >
-          <span className="text-base sm:text-lg leading-none">◀</span>
+          <span className="text-xl sm:text-2xl leading-none">◀</span>
         </button>
 
-        {/* DIREITA (Steer Right) */}
+        <button
+          type="button"
+          aria-label="Baixo - Travar / Marcha-atrás"
+          title="Travar / Marcha-atrás"
+          {...bindDirBtn('down')}
+          className={`${btnBase} ${pressedBtns.down ? btnActive : btnIdle}`}
+        >
+          <span className="text-xl sm:text-2xl leading-none">▼</span>
+        </button>
+
         <button
           type="button"
           aria-label="Direita - Virar à Direita"
+          title="Virar Direita"
           {...bindDirBtn('right')}
-          className={`absolute right-0 top-1/2 -translate-y-1/2 ${btnBase} ${
-            pressedDirs.right ? btnActive : btnIdle
-          }`}
+          className={`${btnBase} ${pressedBtns.right ? btnActive : btnIdle}`}
         >
-          <span className="text-base sm:text-lg leading-none">▶</span>
+          <span className="text-xl sm:text-2xl leading-none">▶</span>
         </button>
-
-        {/* Center Hub Accent */}
-        <div className="w-7 h-7 rounded-lg bg-slate-900/90 border border-white/15 flex items-center justify-center pointer-events-none">
-          <div className="w-2 h-2 rounded-full bg-cyan-400/70" />
-        </div>
       </div>
     );
   }

@@ -42,9 +42,22 @@ interface GameState {
   health: number;
   maxHealth: number;
   oxygen: number;
+  dehydrationSeconds: number;
+  deathCount: number;
+  lastRespawnAt: number | null;
+  respawnTargetPosition: [number, number, number];
+  isOxygenChamberOpen: boolean;
+  toggleOxygenChamber: () => void;
+  isDying: boolean;
+  dyingReason: 'oxygen_chamber' | 'hazard' | null;
+  startDying: (reason: 'oxygen_chamber' | 'hazard') => void;
+  completeDeathRespawn: () => void;
   activeHazard: { type: 'radiation' | 'toxic'; name: string; distance: number } | null;
   setActiveHazard: (hazard: { type: 'radiation' | 'toxic'; name: string; distance: number } | null) => void;
   applyHazardDrain: (healthDelta: number, oxygenDelta: number) => void;
+  applyToxicHit: (healthLoss: number, oxygenLoss: number) => void;
+  tickLifeSupport: (dt: number) => void;
+  respawnInHangar: () => void;
   applyLifeSupportBoost: (healthDelta: number, oxygenDelta: number, raiseMaxHealthTo?: number) => void;
   bases: { id: string; x: number; z: number }[];
   setScene: (scene: 'surface' | 'space') => void;
@@ -99,23 +112,41 @@ interface GameState {
     target: string;
     distKm: number;
     stagingProgress: number;
+    solarHeatPct: number;
+    isEvaporating: boolean;
   };
-  setSpaceFlightData: (data: Partial<{ speed: number; target: string; distKm: number; stagingProgress: number }>) => void;
+  setSpaceFlightData: (data: Partial<{
+    speed: number;
+    target: string;
+    distKm: number;
+    stagingProgress: number;
+    solarHeatPct: number;
+    isEvaporating: boolean;
+  }>) => void;
   hasCompletedInitialStaging: boolean;
   setHasCompletedInitialStaging: (val: boolean) => void;
+  rocketFuel: number;
+  setRocketFuel: (val: number) => void;
+  addRocketFuel: (delta: number) => void;
+  launchFailureMsg: string | null;
+  setLaunchFailureMsg: (msg: string | null) => void;
+  lastRespawnReason: 'hazard' | 'rocket_crash' | 'oxygen_chamber' | null;
+  triggerRocketCrashRespawn: () => void;
   launchTelemetry: {
     countdown: number | null;
     fuel: number;
     speed: number;
     altitude: number;
-    status: 'idle' | 'countdown' | 'liftoff';
+    weightTons: number;
+    status: 'idle' | 'countdown' | 'liftoff' | 'flameout' | 'crashed';
   };
   setLaunchTelemetry: (data: Partial<{
     countdown: number | null;
     fuel: number;
     speed: number;
     altitude: number;
-    status: 'idle' | 'countdown' | 'liftoff';
+    weightTons: number;
+    status: 'idle' | 'countdown' | 'liftoff' | 'flameout' | 'crashed';
   }>) => void;
   isWebGLActive: boolean;
   setIsWebGLActive: (active: boolean) => void;
@@ -222,11 +253,118 @@ export const useGameStore = create<GameState>((set, get) => ({
   carStates: INITIAL_CARS,
   hasCompletedInitialStaging: false,
   setHasCompletedInitialStaging: (val) => set({ hasCompletedInitialStaging: val }),
+  rocketFuel: 0,
+  setRocketFuel: (val) => set((state) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(val * 10) / 10));
+    const weightTons = Math.round(420 + clamped * 25.5);
+    return {
+      rocketFuel: clamped,
+      launchTelemetry: state.launchTelemetry.status === 'idle'
+        ? { ...state.launchTelemetry, fuel: Math.round(clamped), weightTons }
+        : state.launchTelemetry,
+    };
+  }),
+  addRocketFuel: (delta) => set((state) => {
+    const clamped = Math.max(0, Math.min(100, Math.round((state.rocketFuel + delta) * 10) / 10));
+    const weightTons = Math.round(420 + clamped * 25.5);
+    return {
+      rocketFuel: clamped,
+      launchTelemetry: state.launchTelemetry.status === 'idle'
+        ? { ...state.launchTelemetry, fuel: Math.round(clamped), weightTons }
+        : state.launchTelemetry,
+    };
+  }),
+  launchFailureMsg: null,
+  setLaunchFailureMsg: (msg) => set({ launchFailureMsg: msg }),
+  lastRespawnReason: null,
+  respawnTargetPosition: [255, 1.2, 5],
+  isOxygenChamberOpen: true,
+  isDying: false,
+  dyingReason: null,
+  toggleOxygenChamber: () => set((state) => {
+    if (state.isDying) return state;
+    return { isOxygenChamberOpen: !state.isOxygenChamberOpen };
+  }),
+  startDying: (reason) => set((state) => {
+    if (state.isDying) return state;
+    return {
+      isDying: true,
+      dyingReason: reason,
+      drivingCarId: null,
+      carSpeedKmh: 0,
+      isLaunching: false,
+    };
+  }),
+  completeDeathRespawn: () => set((state) => {
+    const isOffEarth = state.planetIndex !== 0;
+    const targetPos: [number, number, number] = isOffEarth
+      ? [state.playerPosition[0], Math.max(1.2, state.playerPosition[1]), state.playerPosition[2]]
+      : [255, 1.2, 5];
+
+    return {
+      isDying: false,
+      dyingReason: null,
+      isLaunching: false,
+      rocketFuel: 0,
+      drivingCarId: null,
+      carSpeedKmh: 0,
+      activeHazard: null,
+      isPlayerInWater: false,
+      maxHealth: 100,
+      health: 100,
+      oxygen: 100,
+      dehydrationSeconds: 0,
+      isOxygenChamberOpen: true,
+      deathCount: state.deathCount + 1,
+      lastRespawnAt: Date.now(),
+      lastRespawnReason: state.dyingReason || 'hazard',
+      respawnTargetPosition: targetPos,
+      playerPosition: targetPos,
+      launchTelemetry: {
+        countdown: null,
+        fuel: 0,
+        speed: 0,
+        altitude: 0,
+        weightTons: 420,
+        status: 'idle',
+      },
+    };
+  }),
+  triggerRocketCrashRespawn: () => set((state) => ({
+    isDying: false,
+    dyingReason: null,
+    isLaunching: false,
+    rocketFuel: 0,
+    drivingCarId: null,
+    carSpeedKmh: 0,
+    activeHazard: null,
+    isPlayerInWater: false,
+    maxHealth: 100,
+    health: 100,
+    oxygen: 100,
+    dehydrationSeconds: 0,
+    isOxygenChamberOpen: true,
+    deathCount: state.deathCount + 1,
+    lastRespawnAt: Date.now(),
+    lastRespawnReason: 'rocket_crash',
+    launchFailureMsg: 'O foguete caiu no mar por falta de combustível! O astronauta morreu e reiniciou no Hangar.',
+    respawnTargetPosition: [255, 1.2, 5],
+    playerPosition: [255, 1.2, 5],
+    launchTelemetry: {
+      countdown: null,
+      fuel: 0,
+      speed: 0,
+      altitude: 0,
+      weightTons: 420,
+      status: 'idle',
+    },
+  })),
   launchTelemetry: {
     countdown: null,
-    fuel: 100,
+    fuel: 0,
     speed: 0,
     altitude: 0,
+    weightTons: 420,
     status: 'idle',
   },
   setLaunchTelemetry: (data) => set((state) => ({
@@ -237,6 +375,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     target: 'Lua',
     distKm: 384,
     stagingProgress: 0,
+    solarHeatPct: 0,
+    isEvaporating: false,
   },
   setSpaceFlightData: (data) => set((state) => ({
     spaceFlightData: { ...state.spaceFlightData, ...data },
@@ -343,18 +483,105 @@ export const useGameStore = create<GameState>((set, get) => ({
   health: 100,
   maxHealth: 100,
   oxygen: 100,
+  dehydrationSeconds: 0,
+  deathCount: 0,
+  lastRespawnAt: null,
   activeHazard: null,
   setActiveHazard: (hazard) => set({ activeHazard: hazard }),
   applyHazardDrain: (healthDelta, oxygenDelta) => set((state) => ({
     health: Math.max(0, state.health - Math.max(0, healthDelta)),
     oxygen: Math.max(0, state.oxygen - Math.max(0, oxygenDelta)),
   })),
+  applyToxicHit: (healthLoss, oxygenLoss) => set((state) => ({
+    health: Math.max(0, state.health - Math.max(0, healthLoss)),
+    oxygen: Math.max(0, state.oxygen - Math.max(0, oxygenLoss)),
+  })),
+  tickLifeSupport: (dt) => set((state) => {
+    if (state.scene !== 'surface' || state.isDying || state.health <= 0) return state;
+
+    const currentPlanet = PLANETS[state.planetIndex];
+    const isNearSunPlanet =
+      currentPlanet && (currentPlanet.type === 'mercury' || currentPlanet.type === 'venus');
+    const isChamberClosedOffEarth = state.planetIndex !== 0 && !state.isOxygenChamberOpen;
+
+    // 1. Solar proximity drain (Mercury & Venus: -2% Water & O2 every 3 minutes)
+    const solarOxygenDrain = isNearSunPlanet ? (2 / 180) * dt : 0;
+
+    // 2. Closed Oxygen Chamber outside Earth: drains 10% every 3 seconds continuously until reopened or depleted
+    const chamberOxygenDrain = isChamberClosedOffEarth ? (10 / 3) * dt : 0;
+    const chamberHealthDrain = isChamberClosedOffEarth ? ((state.maxHealth * 0.10) / 3) * dt : 0;
+
+    const nextOxygen = Math.max(0, state.oxygen - solarOxygenDrain - chamberOxygenDrain);
+    let nextHealth = Math.max(0, state.health - chamberHealthDrain);
+    let nextDehydration = state.dehydrationSeconds;
+
+    if (nextOxygen <= 0) {
+      nextDehydration = state.dehydrationSeconds + dt;
+      // After 20 seconds at 0% Water/O2 without hydrating, begin draining suit protection (health)
+      if (nextDehydration >= 20) {
+        nextHealth = Math.max(0, nextHealth - dt * 5.0);
+      }
+    } else {
+      nextDehydration = 0;
+    }
+
+    if (
+      nextOxygen === state.oxygen &&
+      nextDehydration === state.dehydrationSeconds &&
+      nextHealth === state.health
+    ) {
+      return state;
+    }
+
+    return {
+      oxygen: nextOxygen,
+      dehydrationSeconds: nextDehydration,
+      health: nextHealth,
+    };
+  }),
+  respawnInHangar: () => set((state) => {
+    const isOffEarth = state.planetIndex !== 0;
+    const targetPos: [number, number, number] = isOffEarth
+      ? [state.playerPosition[0], Math.max(1.2, state.playerPosition[1]), state.playerPosition[2]]
+      : [255, 1.2, 5];
+
+    return {
+      isDying: false,
+      dyingReason: null,
+      isLaunching: false,
+      rocketFuel: 0,
+      drivingCarId: null,
+      carSpeedKmh: 0,
+      activeHazard: null,
+      isPlayerInWater: false,
+      maxHealth: 100,
+      health: 100,
+      oxygen: 100,
+      dehydrationSeconds: 0,
+      isOxygenChamberOpen: true,
+      deathCount: state.deathCount + 1,
+      lastRespawnAt: Date.now(),
+      lastRespawnReason: 'hazard',
+      respawnTargetPosition: targetPos,
+      playerPosition: targetPos,
+      launchTelemetry: {
+        countdown: null,
+        fuel: 0,
+        speed: 0,
+        altitude: 0,
+        weightTons: 420,
+        status: 'idle',
+      },
+    };
+  }),
   applyLifeSupportBoost: (healthDelta, oxygenDelta, raiseMaxHealthTo) => set((state) => {
     const nextMax = raiseMaxHealthTo ? Math.max(state.maxHealth, raiseMaxHealthTo) : state.maxHealth;
+    const nextOxygen = Math.min(100, Math.max(0, state.oxygen + oxygenDelta));
     return {
       maxHealth: nextMax,
       health: Math.min(nextMax, Math.max(0, state.health + healthDelta)),
-      oxygen: Math.min(100, Math.max(0, state.oxygen + oxygenDelta)),
+      oxygen: nextOxygen,
+      dehydrationSeconds: nextOxygen > 0 ? 0 : state.dehydrationSeconds,
     };
   }),
   bases: [],
@@ -365,16 +592,27 @@ export const useGameStore = create<GameState>((set, get) => ({
     planetIndex: index, 
     gravity: PLANETS[index].gravity, 
     scene: 'surface',
+    isDying: false,
+    dyingReason: null,
     isLaunching: false,
+    rocketFuel: 0,
+    launchFailureMsg: null,
     drivingCarId: null,
     nearCarId: null,
+    isNearRocket: false,
     activeHazard: null,
+    dehydrationSeconds: 0,
+    isOxygenChamberOpen: true,
+    lastRespawnReason: null,
+    playerPosition: index === 0 ? [255, 1.2, 5] : [0, 1.2, 9.5],
+    respawnTargetPosition: index === 0 ? [255, 1.2, 5] : [0, 1.2, 9.5],
     bases: [],
     launchTelemetry: {
       countdown: null,
-      fuel: 100,
+      fuel: 0,
       speed: 0,
       altitude: 0,
+      weightTons: 420,
       status: 'idle',
     },
   }),
@@ -394,20 +632,27 @@ export const useGameStore = create<GameState>((set, get) => ({
     const alreadyStaged = state.hasCompletedInitialStaging || state.planetIndex !== 0;
     return {
       scene: 'space',
+      isDying: false,
+      dyingReason: null,
       isLaunching: false,
+      rocketFuel: 0,
+      launchFailureMsg: null,
       drivingCarId: null,
       nearCarId: null,
       hasCompletedInitialStaging: alreadyStaged,
       launchTelemetry: {
         countdown: null,
-        fuel: 100,
+        fuel: 0,
         speed: 0,
         altitude: 0,
+        weightTons: 420,
         status: 'idle',
       },
       spaceFlightData: {
         ...state.spaceFlightData,
         stagingProgress: alreadyStaged ? 1.0 : 0.0,
+        solarHeatPct: 0,
+        isEvaporating: false,
       },
     };
   }),

@@ -247,7 +247,8 @@ function AstronautModel({
       actionName === 'drive' ||
       actionName === 'swim' ||
       actionName === 'treadWater' ||
-      actionName === 'climb'
+      actionName === 'climb' ||
+      actionName === 'dead'
     ) {
       Object.values(actions).forEach((act) => act?.stop());
       currentAction.current = actionName;
@@ -294,9 +295,10 @@ function AstronautModel({
       actionName === 'swim' ||
       actionName === 'treadWater' ||
       actionName === 'climb' ||
-      actionName === 'drive'
+      actionName === 'drive' ||
+      actionName === 'dead'
     ) {
-      if (actionName === 'drive') {
+      if (actionName === 'drive' || actionName === 'dead') {
         Object.values(actions).forEach((act) => act?.stop());
         swimBlendWeight.current = 1.0;
       } else {
@@ -353,14 +355,15 @@ function AstronautModel({
       }
     }
 
-    // Smooth transition weight: 1.0 when swimming, treading water, climbing ladder, or driving a car
+    // Smooth transition weight: 1.0 when swimming, treading water, climbing ladder, driving a car, or fallen dead
     const isProceduralActive =
       isDrivingCar ||
+      actionName === 'dead' ||
       actionName === 'swim' ||
       actionName === 'treadWater' ||
       actionName === 'climb';
     const targetSwimWeight = isProceduralActive ? 1.0 : 0.0;
-    swimBlendWeight.current = isDrivingCar
+    swimBlendWeight.current = isDrivingCar || actionName === 'dead'
       ? 1.0
       : MathUtils.damp(swimBlendWeight.current, targetSwimWeight, 12.0, delta);
 
@@ -467,35 +470,58 @@ function AstronautModel({
           rightFoot.scale.setScalar(0.12);
         }
 
-        // Left & Right Arms reaching forward and inward to meet the 9-o'clock (+X) and 3-o'clock (-X) EVA gloves on the steering wheel rim
+        // Left & Right Arms calibrated per skeleton gender so real EVA gloves grip the 9-o'clock (+X) and 3-o'clock (-X) wheel rim cleanly!
+        const isFemaleRig = gender === 'female';
         if (leftArm && restArmL) {
-          const pitchL = (-1.18 - steer * 0.42) * weight;
-          const yawL = 0.38 * weight;
-          const rollL = (0.52 - steer * 0.28) * weight;
-          _deltaQuat.setFromEuler(_scratchEuler.set(pitchL, yawL, rollL));
+          const baseExL = isFemaleRig ? 0.40 : -0.60;
+          const baseEyL = isFemaleRig ? 0.40 : 0.60;
+          const baseEzL = isFemaleRig ? 1.20 : 1.80;
+          _deltaQuat.setFromEuler(
+            _scratchEuler.set(
+              (baseExL - steer * 0.28) * weight,
+              baseEyL * weight,
+              (baseEzL - steer * 0.14) * weight
+            )
+          );
           leftArm.quaternion.copy(restArmL).multiply(_deltaQuat);
         }
         if (leftForeArm && restForeArmL) {
-          _deltaQuat.setFromAxisAngle(_xAxis, (0.58 + steer * 0.22) * weight);
+          _deltaQuat.setFromEuler(_scratchEuler.set(0.18 * weight, 0, -0.14 * weight));
           leftForeArm.quaternion.copy(restForeArmL).multiply(_deltaQuat);
         }
         if (leftHand) {
-          leftHand.scale.setScalar(0.25);
+          leftHand.scale.setScalar(0.95);
+          const restHandL = boneRestQuats.get('LeftHand');
+          if (restHandL) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.25 * weight, -0.35 * weight, 0));
+            leftHand.quaternion.copy(restHandL).multiply(_deltaQuat);
+          }
         }
 
         if (rightArm && restArmR) {
-          const pitchR = (-1.18 + steer * 0.42) * weight;
-          const yawR = -0.38 * weight;
-          const rollR = (-0.52 - steer * 0.28) * weight;
-          _deltaQuat.setFromEuler(_scratchEuler.set(pitchR, yawR, rollR));
+          const baseExR = isFemaleRig ? 0.40 : -0.20;
+          const baseEyR = isFemaleRig ? -0.40 : -0.60;
+          const baseEzR = isFemaleRig ? -1.20 : -1.60;
+          _deltaQuat.setFromEuler(
+            _scratchEuler.set(
+              (baseExR + steer * 0.28) * weight,
+              baseEyR * weight,
+              (baseEzR - steer * 0.14) * weight
+            )
+          );
           rightArm.quaternion.copy(restArmR).multiply(_deltaQuat);
         }
         if (rightForeArm && restForeArmR) {
-          _deltaQuat.setFromAxisAngle(_xAxis, (0.58 - steer * 0.22) * weight);
+          _deltaQuat.setFromEuler(_scratchEuler.set(0.18 * weight, 0, 0.14 * weight));
           rightForeArm.quaternion.copy(restForeArmR).multiply(_deltaQuat);
         }
         if (rightHand) {
-          rightHand.scale.setScalar(0.25);
+          rightHand.scale.setScalar(0.95);
+          const restHandR = boneRestQuats.get('RightHand');
+          if (restHandR) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.25 * weight, 0.35 * weight, 0));
+            rightHand.quaternion.copy(restHandR).multiply(_deltaQuat);
+          }
         }
 
         // Head looking forward through the windshield and slightly into the turn
@@ -503,6 +529,57 @@ function AstronautModel({
           _deltaQuat.setFromEuler(_scratchEuler.set(0.06 * weight, steer * 0.35 * weight, 0));
           head.quaternion.copy(restHead).multiply(_deltaQuat);
         }
+      } else if (actionName === 'dead') {
+        // --- COLLAPSED / FALLEN ASTRONAUT RAGDOLL POSE ---
+        if (hips && restHips) {
+          hips.quaternion.copy(restHips);
+        }
+        if (spine && restSpine) {
+          _deltaQuat.setFromEuler(_scratchEuler.set(0.12 * weight, 0, 0.06 * weight));
+          spine.quaternion.copy(restSpine).multiply(_deltaQuat);
+        }
+        if (spine1 && restSpine1) {
+          _deltaQuat.setFromEuler(_scratchEuler.set(0.10 * weight, 0, -0.04 * weight));
+          spine1.quaternion.copy(restSpine1).multiply(_deltaQuat);
+        }
+        if (head && restHead) {
+          _deltaQuat.setFromEuler(_scratchEuler.set(0.28 * weight, 0.22 * weight, 0.14 * weight));
+          head.quaternion.copy(restHead).multiply(_deltaQuat);
+        }
+        if (leftArm && restArmL) {
+          _deltaQuat.setFromEuler(_scratchEuler.set(0.22 * weight, 0.15 * weight, 0.55 * weight));
+          leftArm.quaternion.copy(restArmL).multiply(_deltaQuat);
+        }
+        if (leftForeArm && restForeArmL) {
+          _deltaQuat.setFromAxisAngle(_xAxis, 0.35 * weight);
+          leftForeArm.quaternion.copy(restForeArmL).multiply(_deltaQuat);
+        }
+        if (rightArm && restArmR) {
+          _deltaQuat.setFromEuler(_scratchEuler.set(0.18 * weight, -0.18 * weight, -0.62 * weight));
+          rightArm.quaternion.copy(restArmR).multiply(_deltaQuat);
+        }
+        if (rightForeArm && restForeArmR) {
+          _deltaQuat.setFromAxisAngle(_xAxis, 0.42 * weight);
+          rightForeArm.quaternion.copy(restForeArmR).multiply(_deltaQuat);
+        }
+        if (leftUpLeg && restUpL) {
+          _deltaQuat.setFromEuler(_scratchEuler.set(-0.18 * weight, -0.10 * weight, 0.12 * weight));
+          leftUpLeg.quaternion.copy(restUpL).multiply(_deltaQuat);
+        }
+        if (leftLeg && restLegL) {
+          _deltaQuat.setFromAxisAngle(_xAxis, 0.38 * weight);
+          leftLeg.quaternion.copy(restLegL).multiply(_deltaQuat);
+        }
+        if (rightUpLeg && restUpR) {
+          _deltaQuat.setFromEuler(_scratchEuler.set(-0.08 * weight, 0.12 * weight, -0.14 * weight));
+          rightUpLeg.quaternion.copy(restUpR).multiply(_deltaQuat);
+        }
+        if (rightLeg && restLegR) {
+          _deltaQuat.setFromAxisAngle(_xAxis, 0.22 * weight);
+          rightLeg.quaternion.copy(restLegR).multiply(_deltaQuat);
+        }
+        if (leftFoot && restFootL) leftFoot.quaternion.copy(restFootL);
+        if (rightFoot && restFootR) rightFoot.quaternion.copy(restFootR);
       } else if (isClimbingLadder) {
         // --- REALISTIC IRON LADDER CLIMBING KINEMATICS (GRABBING RUNGS & STEPPING UP) ---
         const climbCycle = time * 5.2;
