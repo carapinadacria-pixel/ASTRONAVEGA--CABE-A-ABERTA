@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 580" width="1000" height="580">
+  <defs>
+    <!-- Crisp shadow filter for signage plaque -->
+    <filter id="ggpenPlateShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-opacity="0.12" flood-color="#000000" />
+    </filter>
+  </defs>
+
+  <!-- Transparent Background Matching User Image -->
+
+  <!-- ================================================================ -->
+  <!-- GGPEN OFFICIAL LOGO - EXACT REPRODUCTION FROM USER IMAGE          -->
+  <!-- ================================================================ -->
+
+  <!-- Top-Right Signature Diagonal Antenna Beam shooting up from the 'P' -->
+  <line x1="505" y1="205" x2="765" y2="28" stroke="#0082b4" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- ---------------------------------------------------------------- -->
+  <!-- "GGPEN" MAIN GEOMETRIC ITALIC WORDMARK                            -->
+  <!-- ---------------------------------------------------------------- -->
+  <!-- Slanted Group (matching the 14-degree forward italic slant of GGPEN) -->
+  <g transform="skewX(-14) translate(80, 0)">
+
+    <!-- "GG" IN DEEP NAVY BLUE (#0f1f4b) -->
+    <!-- First 'G' -->
+    <path d="
+      M 195 210
+      L 125 210
+      C 95 210 75 228 75 258
+      L 75 272
+      C 75 302 95 320 125 320
+      L 190 320
+      C 205 320 215 310 215 295
+      L 215 270
+      L 145 270
+      L 145 288
+      L 185 288
+      L 185 294
+      C 185 298 180 302 172 302
+      L 130 302
+      C 112 302 102 292 102 272
+      L 102 258
+      C 102 238 112 228 130 228
+      L 195 228
+      Z"
+      fill="#0f1f4b"
+    />
+
+    <!-- Second 'G' -->
+    <path d="
+      M 345 210
+      L 275 210
+      C 245 210 225 228 225 258
+      L 225 272
+      C 225 302 245 320 275 320
+      L 340 320
+      C 355 320 365 310 365 295
+      L 365 270
+      L 295 270
+      L 295 288
+      L 335 288
+      L 335 294
+      C 335 298 330 302 322 302
+      L 280 302
+      C 262 302 252 292 252 272
+      L 252 258
+      C 252 238 262 228 280 228
+      L 345 228
+      Z"
+      fill="#0f1f4b"
+    />
+
+    <!-- "PEN" IN VIBRANT CYAN BLUE (#0082b4) -->
+    <!-- 'P' with curved top bowl -->
+    <path d="
+      M 378 210
+      L 452 210
+      C 478 210 496 224 496 248
+      C 496 272 478 286 452 286
+      L 408 286
+      L 408 320
+      L 378 320
+      Z
+      M 408 228
+      L 446 228
+      C 460 228 468 236 468 248
+      C 468 260 460 268 446 268
+      L 408 268
+      Z"
+      fill="#0082b4"
+    />
+
+    <!-- 'E' with 3 parallel horizontal bars -->
+    <path d="
+      M 510 210
+      L 582 210
+      L 582 228
+      L 540 228
+      L 540 255
+      L 576 255
+      L 576 273
+      L 540 273
+      L 540 302
+      L 584 302
+      L 584 320
+      L 510 320
+      Z"
+      fill="#0082b4"
+    />
+
+    <!-- 'N' with diagonal cross stroke -->
+    <path d="
+      M 598 210
+      L 628 210
+      L 670 286
+      L 670 210
+      L 700 210
+      L 700 320
+      L 670 320
+      L 628 244
+      L 628 320
+      L 598 320
+      Z"
+      fill="#0082b4"
+    />
+  </g>
+
+  <!-- ---------------------------------------------------------------- -->
+  <!-- OFFICIAL SUBTITLE IN CLEAN SANS-SERIF                              -->
+  <!-- "Gabinete de Gestão do Programa Espacial Nacional"                 -->
+  <!-- ---------------------------------------------------------------- -->
+  <text x="500" y="365" text-anchor="middle" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-weight="700" font-size="28.5" fill="#0f1f4b" letter-spacing="0.2">Gabinete de Gestão do Programa Espacial Nacional</text>
+
+  <!-- ---------------------------------------------------------------- -->
+  <!-- DYNAMIC SWOOSH & 3-WING SATELLITE (ANGOSAT SATELLITE ICON)        -->
+  <!-- ---------------------------------------------------------------- -->
+  <!-- Sweeping Cyan Orbital Loop (#0082b4) -->
+  <path d="
+    M 235 448
+    C 175 448 140 482 152 522
+    C 165 558 210 564 265 555
+    C 365 538 520 488 640 445
+    C 530 484 375 528 270 540
+    C 215 546 178 538 170 514
+    C 160 484 190 462 235 448
+    Z"
+    fill="#0082b4"
+  />
+
+  <!-- High-Fidelity 3-Panel Satellite at End of Orbit -->
+  <g transform="translate(628, 480) rotate(16)">
+    <!-- Panel 1: Upper-Right Wing -->
+    <path d="M 6 -12 L 20 -44 L 34 -38 L 20 -6 Z" fill="#0f1f4b"/>
+    <!-- Panel 2: Lower-Right Wing -->
+    <path d="M 12 6 L 42 22 L 34 36 L 4 20 Z" fill="#0f1f4b"/>
+    <!-- Panel 3: Left Wing -->
+    <path d="M -12 4 L -46 2 L -46 -12 L -12 -10 Z" fill="#0f1f4b"/>
+
+    <!-- Central Body Hub (Dark Navy Hexagon/Circle with center core) -->
+    <circle cx="0" cy="0" r="14" fill="#0f1f4b" stroke="#ffffff" stroke-width="2.5"/>
+    <circle cx="0" cy="0" r="6" fill="#ffffff"/>
+  </g>
+</svg>

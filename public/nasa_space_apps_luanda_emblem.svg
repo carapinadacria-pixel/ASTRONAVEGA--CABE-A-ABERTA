@@ -1,0 +1,89 @@
+<svg width="400" height="400" viewBox="0 0 400 400" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <title>NASA Space Apps Challenge Luanda - Official Starburst Emblem</title>
+  <defs>
+    <!-- Official NASA Space Apps Deep Space Navy Gradient -->
+    <linearGradient id="spaceBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a1835"/>
+      <stop offset="60%" stop-color="#061024"/>
+      <stop offset="100%" stop-color="#020814"/>
+    </linearGradient>
+
+    <!-- Electric Blue Orbital Ring Gradient -->
+    <linearGradient id="electricGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f0ff"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <!-- Official Neon Yellow Accent Gradient -->
+    <linearGradient id="neonYellowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="25%" stop-color="#fffb00"/>
+      <stop offset="100%" stop-color="#faea27"/>
+    </linearGradient>
+
+    <!-- Soft Glow Filter -->
+    <filter id="starGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Circular Space Badge Background -->
+  <circle cx="200" cy="200" r="192" fill="url(#spaceBlueGrad)" stroke="#0284c7" stroke-width="4"/>
+
+  <!-- Concentric Orbital Grid Lines (Official Motif) -->
+  <circle cx="200" cy="200" r="165" fill="none" stroke="#0284c7" stroke-width="2.5" opacity="0.45" stroke-dasharray="12 8"/>
+  <circle cx="200" cy="200" r="132" fill="none" stroke="#00f0ff" stroke-width="3" opacity="0.6"/>
+  <circle cx="200" cy="200" r="95" fill="none" stroke="#38bdf8" stroke-width="3.5" opacity="0.85"/>
+  <circle cx="200" cy="200" r="54" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.4"/>
+
+  <!-- Orbital Coordinates Crosshairs -->
+  <line x1="200" y1="20" x2="200" y2="70" stroke="#00f0ff" stroke-width="2" opacity="0.7"/>
+  <line x1="200" y1="330" x2="200" y2="380" stroke="#00f0ff" stroke-width="2" opacity="0.7"/>
+  <line x1="20" y1="200" x2="70" y2="200" stroke="#00f0ff" stroke-width="2" opacity="0.7"/>
+  <line x1="330" y1="200" x2="380" y2="200" stroke="#00f0ff" stroke-width="2" opacity="0.7"/>
+
+  <!-- Diagonal Satellite Orbit Path -->
+  <ellipse cx="200" cy="200" rx="160" ry="65" fill="none" stroke="#00f0ff" stroke-width="2" transform="rotate(-35 200 200)" opacity="0.5"/>
+  <circle cx="95" cy="125" r="4.5" fill="#faea27"/>
+  <circle cx="305" cy="275" r="3.5" fill="#38bdf8"/>
+
+  <!-- Central Starburst Glow Backdrop -->
+  <circle cx="200" cy="200" r="38" fill="#faea27" opacity="0.18" filter="url(#starGlow)"/>
+
+  <!-- OFFICIAL SPACE APPS 4-POINT TAPERED STARBURST MOTIF -->
+  <!-- Vertical Beam -->
+  <path d="M 200 88 C 200 160, 160 200, 88 200 C 160 200, 200 240, 200 312 C 200 240, 240 200, 312 200 C 240 200, 200 160, 200 88 Z"
+        fill="url(#neonYellowGrad)"
+        filter="url(#starGlow)"/>
+
+  <!-- Secondary Diagonal Flare (Spark) -->
+  <path d="M 200 142 C 200 180, 180 200, 142 200 C 180 200, 200 220, 200 258 C 200 220, 220 200, 258 200 C 220 200, 200 180, 200 142 Z"
+        fill="#ffffff"
+        opacity="0.9"/>
+
+  <!-- Brilliant Center Core -->
+  <circle cx="200" cy="200" r="8" fill="#ffffff"/>
+
+  <!-- Outer Text Arc: LUANDA - ANGOLA -->
+  <g fill="#ffffff" font-family="'Plus Jakarta Sans', 'Montserrat', -apple-system, sans-serif" font-weight="900" font-size="16" letter-spacing="4">
+    <!-- Top Arc: SPACE APPS -->
+    <path id="topArc" d="M 55 200 A 145 145 0 0 1 345 200" fill="none"/>
+    <text font-size="14" fill="#00f0ff" letter-spacing="5">
+      <textPath href="#topArc" startOffset="50%" text-anchor="middle">
+        SPACE APPS CHALLENGE
+      </textPath>
+    </text>
+
+    <!-- Bottom Arc: LUANDA -->
+    <path id="bottomArc" d="M 345 200 A 145 145 0 0 1 55 200" fill="none"/>
+    <text font-size="17" fill="#faea27" letter-spacing="6">
+      <textPath href="#bottomArc" startOffset="50%" text-anchor="middle">
+        ★ LUANDA ★
+      </textPath>
+    </text>
+  </g>
+</svg>

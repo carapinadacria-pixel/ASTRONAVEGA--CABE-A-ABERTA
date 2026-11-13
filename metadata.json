@@ -1,0 +1,8 @@
+{
+  "name": "ASTRONAVEGA- Cabeça Aberta ",
+  "description": "Exploração espacial, sobrevivência, crafting e gravidade dinâmica em um mundo interativo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
