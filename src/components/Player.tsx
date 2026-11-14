@@ -1,12 +1,14 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Vector3, Group, Quaternion, Color, MathUtils } from 'three';
-import { useGameStore } from '../store';
+import { useGameStore, livePlayerMotion } from '../store';
+import { UI_TEXT } from '../utils/i18n';
 import { useKeyboardControls, OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { RigidBody, CapsuleCollider, RapierRigidBody, useRapier } from '@react-three/rapier';
 import { AstronautCharacter } from './AstronautCharacter';
 import { carVisualGroups } from './RealisticCars';
+import { SUIT_TABLE_POS, MOON_FLAG_SPOT_POS } from './StoryMissionProps';
 import {
   playWaterSplashSound,
   playWaterWadeSound,
@@ -195,6 +197,10 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
   const gravity = useGameStore((state) => state.gravity);
   const planetIndex = useGameStore((state) => state.planetIndex);
   const drivingCarId = useGameStore((state) => state.drivingCarId);
+  const gameMode = useGameStore((state) => state.gameMode);
+  const storyStep = useGameStore((state) => state.storyStep);
+  const hasSpacesuit = useGameStore((state) => state.hasSpacesuit);
+  const isFlagPlantedOnMoon = useGameStore((state) => state.isFlagPlantedOnMoon);
   const { camera } = useThree();
   const { rapier, world } = useRapier();
 
@@ -204,6 +210,8 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
   const prevNearVAB = useRef<boolean>(false);
   const prevNearCarId = useRef<string | null>(null);
   const prevNearRocket = useRef<boolean>(false);
+  const prevNearSuitTable = useRef<boolean>(false);
+  const prevNearFlagSpot = useRef<boolean>(false);
   const prevNearComputer = useRef<boolean>(false);
   const prevNearComputerTitle = useRef<string | null>(null);
   const prevDrivingCarId = useRef<string | null>(null);
@@ -533,6 +541,13 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
         bodyRef.current.rotation.z = MathUtils.damp(bodyRef.current.rotation.z, 0.14, 6.0, safeDelta);
         bodyRef.current.position.y = MathUtils.damp(bodyRef.current.position.y, 0.24, 7.5, safeDelta);
       }
+      livePlayerMotion.action = 'idle';
+      livePlayerMotion.isJumping = false;
+      livePlayerMotion.inWater = false;
+      livePlayerMotion.deepWater = false;
+      livePlayerMotion.speed = 0;
+      livePlayerMotion.bodyYOffset = 0;
+      livePlayerMotion.bodyPitch = 0;
 
       // Ensure player sees the astronaut collapse even when in 1st-person mode
       const camTargetX = curPos.x;
@@ -802,6 +817,14 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
         storePos[1] = 1.05;
         storePos[2] = car.z;
         storeState.playerSpeed = Math.abs(car.speed);
+        livePlayerMotion.action = 'drive';
+        livePlayerMotion.isJumping = false;
+        livePlayerMotion.inWater = false;
+        livePlayerMotion.deepWater = false;
+        livePlayerMotion.yaw = car.rot;
+        livePlayerMotion.speed = Math.abs(car.speed);
+        livePlayerMotion.bodyYOffset = 0;
+        livePlayerMotion.bodyPitch = 0;
 
         if (cameraMode === 'first') {
           // 1ST-PERSON COCKPIT VIEW: Strictly locked in the Left-Hand-Drive driver's seat (X = +0.38) in exact lockstep with visualCarGroup!
@@ -992,6 +1015,28 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       storeState.setIsNearVAB(nearVAB);
     }
 
+    // Story Mode: Proximity to Suit Table in Hangar (Earth) and Moon Flag Spot (Lua)
+    const nearSuitTableNow =
+      storeState.gameMode === 'story' &&
+      planetIndex === 0 &&
+      !storeState.hasSpacesuit &&
+      Math.hypot(playerPos.x - SUIT_TABLE_POS[0], playerPos.z - SUIT_TABLE_POS[2]) < 4.5 &&
+      playerPos.y < 3.0;
+    if (nearSuitTableNow !== prevNearSuitTable.current) {
+      prevNearSuitTable.current = nearSuitTableNow;
+      storeState.setIsNearSuitTable(nearSuitTableNow);
+    }
+
+    const nearFlagSpotNow =
+      storeState.gameMode === 'story' &&
+      planetIndex === 1 &&
+      !storeState.isFlagPlantedOnMoon &&
+      Math.hypot(playerPos.x - MOON_FLAG_SPOT_POS[0], playerPos.z - MOON_FLAG_SPOT_POS[2]) < 3.6;
+    if (nearFlagSpotNow !== prevNearFlagSpot.current) {
+      prevNearFlagSpot.current = nearFlagSpotNow;
+      storeState.setIsNearFlagSpot(nearFlagSpotNow);
+    }
+
     // Proximity & Touch Detection for Rocket / Planetary Capsule Lander
     // Astronaut must be genuinely close to the capsule lander to board with [R] or by touching it
     const rocketHorizDist = Math.hypot(playerPos.x, playerPos.z);
@@ -1011,11 +1056,17 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
         : rocketHorizDist < 3.15 && isMoving;
     if (isTouchingRocket && !storeState.isLaunching) {
       if (planetIndex === 0) {
-        if (storeState.rocketFuel <= 0) {
+        if (storeState.gameMode === 'story' && !storeState.hasSpacesuit) {
           const nowMs = performance.now();
           if (nowMs - lastFuelWarnTime.current > 2500) {
             lastFuelWarnTime.current = nowMs;
-            storeState.setLaunchFailureMsg('Foguete sem combustível (0%)! Pressione "Abastecer Foguete" no painel.');
+            storeState.setLaunchFailureMsg(UI_TEXT[storeState.language].needSuitBeforeRocket);
+          }
+        } else if (storeState.rocketFuel <= 0) {
+          const nowMs = performance.now();
+          if (nowMs - lastFuelWarnTime.current > 2500) {
+            lastFuelWarnTime.current = nowMs;
+            storeState.setLaunchFailureMsg(UI_TEXT[storeState.language].noFuelBeforeLaunch);
           }
         } else {
           const f = storeState.rocketFuel;
@@ -1514,6 +1565,15 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
     group.current.scale.set(1, 1, 1);
     prevJumpRef.current = effectiveJump;
 
+    livePlayerMotion.action = nextAction;
+    livePlayerMotion.isJumping = nextAction === 'jump';
+    livePlayerMotion.inWater = isInWaterZone;
+    livePlayerMotion.deepWater = isDeepWater;
+    livePlayerMotion.yaw = bodyRef.current ? bodyRef.current.rotation.y : 0;
+    livePlayerMotion.speed = horizSpeed;
+    livePlayerMotion.bodyYOffset = bodyRef.current ? bodyRef.current.position.y : 0;
+    livePlayerMotion.bodyPitch = bodyRef.current ? bodyRef.current.rotation.x : 0;
+
     // Spatial audio: Earth ocean/machinery fades out away from source; footsteps play on all planets
     updateSpatialAudio(
       [playerPos.x, playerPos.y, playerPos.z],
@@ -1682,6 +1742,8 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
             actionName={drivingCarId ? 'drive' : isDying ? 'dead' : actionName}
             speed={drivingCarId ? 0 : inWater ? 2.8 : actionName === 'run' ? 17.0 : 8.8}
             isJumping={!drivingCarId && !isDying && actionName === 'jump'}
+            hasSpacesuit={gameMode === 'story' ? hasSpacesuit : true}
+            carryingFlag={gameMode === 'story' && planetIndex === 1 && storyStep === 'moon_exit_flag' && !isFlagPlantedOnMoon}
           />
           {!drivingCarId &&
             (inWater ? (

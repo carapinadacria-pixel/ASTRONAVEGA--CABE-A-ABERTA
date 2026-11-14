@@ -1,3 +1,5 @@
+import { useGameStore } from './store';
+
 // ============================================================================
 // PROCEDURAL AUDIO ENGINE - ZERO EXTERNAL MP3 DEPENDENCY
 // 100% Web Audio API Synthesis:
@@ -29,9 +31,17 @@ let carTireFilter: BiquadFilterNode | null = null;
 let carBrakeGain: GainNode | null = null;
 let carBrakeFilter: BiquadFilterNode | null = null;
 
-// Track active environment so audio adapts immediately on scene/planet changes
-let currentEnvScene: 'surface' | 'space' = 'surface';
+// Track active environment so audio adapts immediately on scene/planet changes (starts silent until playing)
+let currentEnvScene: 'surface' | 'space' | 'silent' = 'silent';
 let currentEnvPlanetIndex = 0;
+
+// Procedural Music Engine (Menu Suspense + In-Game Selectable Tracks)
+export type MusicMode = 'silent' | 'menu_suspense' | 'epic' | 'orbital' | 'tactical';
+let musicGain: GainNode | null = null;
+let currentMusicMode: MusicMode = 'silent';
+let musicTimerId: number | null = null;
+let musicStepIndex = 0;
+let activeDroneNodes: { stop: () => void }[] = [];
 
 // Footstep cadence timing & alternating left/right stride pitch variation
 let lastFootstepTime = 0;
@@ -64,6 +74,11 @@ function startProceduralAmbience(ctx: AudioContext) {
   masterGain.gain.setValueAtTime(isAudioEnabled ? 1.0 : 0.0, now);
   masterGain.connect(ctx.destination);
 
+  // Dedicated Music Bus Gain (connects through masterGain so global mute respects music)
+  musicGain = ctx.createGain();
+  musicGain.gain.setValueAtTime(currentMusicMode === 'silent' ? 0.0 : 0.34, now);
+  musicGain.connect(masterGain);
+
   // Buffer with pink-filtered noise for natural organic wind, waves & brake friction (4 seconds loop)
   const bufferSec = 4;
   const bufferSize = ctx.sampleRate * bufferSec;
@@ -78,8 +93,9 @@ function startProceduralAmbience(ctx: AudioContext) {
     data[i] = (b0 + b1 + b2) * 0.25;
   }
 
-  const isEarthSurface = currentEnvScene === 'surface' && currentEnvPlanetIndex === 0;
-  const isSpace = currentEnvScene === 'space';
+  const isSilent = currentEnvScene === 'silent';
+  const isEarthSurface = !isSilent && currentEnvScene === 'surface' && currentEnvPlanetIndex === 0;
+  const isSpace = !isSilent && currentEnvScene === 'space';
 
   // --- A. NATURE SOUND (Brisa Costeira & Atmosfera) ---
   const natureSource = ctx.createBufferSource();
@@ -99,7 +115,7 @@ function startProceduralAmbience(ctx: AudioContext) {
   windLFO.start();
 
   natureGain = ctx.createGain();
-  natureGain.gain.setValueAtTime(isEarthSurface ? 0.24 : isSpace ? 0.0 : 0.10, now);
+  natureGain.gain.setValueAtTime(isSilent ? 0.0 : isEarthSurface ? 0.24 : isSpace ? 0.0 : 0.10, now);
 
   natureSource.connect(natureFilter);
   natureFilter.connect(natureGain);
@@ -211,7 +227,7 @@ function startProceduralAmbience(ctx: AudioContext) {
   spaceWindSrc.start();
 
   spaceGain = ctx.createGain();
-  spaceGain.gain.setValueAtTime(isSpace ? 0.36 : isEarthSurface ? 0.0 : 0.10, now);
+  spaceGain.gain.setValueAtTime(isSilent ? 0.0 : isSpace ? 0.36 : isEarthSurface ? 0.0 : 0.10, now);
 
   spaceSubOsc.connect(spaceFilter);
   spacePadOsc1.connect(spaceFilter);
@@ -294,13 +310,24 @@ function startProceduralAmbience(ctx: AudioContext) {
   brakeNoiseSrc.start();
 }
 
-export function setAudioEnvironment(scene: 'surface' | 'space', planetIndex: number) {
+export function setAudioEnvironment(scene: 'surface' | 'space' | 'silent', planetIndex: number) {
   currentEnvScene = scene;
   currentEnvPlanetIndex = planetIndex;
   const ctx = getAudioContext();
   if (!ctx || !ambientStarted) return;
 
   const now = ctx.currentTime;
+  if (scene === 'silent') {
+    if (oceanGain) oceanGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (machineGain) machineGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (natureGain) natureGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (spaceGain) spaceGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (carEngineGain) carEngineGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (carTireGain) carTireGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (carBrakeGain) carBrakeGain.gain.setTargetAtTime(0.0, now, 0.03);
+    return;
+  }
+
   const isEarthSurface = scene === 'surface' && planetIndex === 0;
   const isSpace = scene === 'space';
 
@@ -405,6 +432,14 @@ export function updateSpatialAudio(
   if (!ctx || !ambientStarted || !isAudioEnabled) return;
 
   const now = ctx.currentTime;
+  if (currentEnvScene === 'silent') {
+    if (oceanGain) oceanGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (machineGain) machineGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (natureGain) natureGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (spaceGain) spaceGain.gain.setTargetAtTime(0.0, now, 0.03);
+    return;
+  }
+
   const px = playerPos[0];
   const pz = playerPos[2];
 
@@ -834,12 +869,230 @@ export function playDoorCloseSound() {
 }
 
 // ----------------------------------------------------------------------------
-// 7. INITIALIZATION & CONTROLS (NO EXTERNAL MUSIC MP3!)
+// 7. INITIALIZATION, PROCEDURAL MUSIC SEQUENCER & CONTROLS
 // ----------------------------------------------------------------------------
+function stopMusicSequencer(fadeOut = true) {
+  if (musicTimerId !== null) {
+    window.clearInterval(musicTimerId);
+    musicTimerId = null;
+  }
+  activeDroneNodes.forEach((n) => {
+    try {
+      n.stop();
+    } catch {
+      // Ignore already stopped oscillators
+    }
+  });
+  activeDroneNodes = [];
+
+  if (musicGain && audioCtx && fadeOut) {
+    musicGain.gain.setTargetAtTime(0.0, audioCtx.currentTime, 0.08);
+  }
+}
+
+function playMusicVoice(
+  ctx: AudioContext,
+  freq: number,
+  durationSec: number,
+  volume: number,
+  wave: OscillatorType,
+  cutoffHz: number,
+  attackSec = 0.04,
+  detuneCents = 0
+) {
+  if (!musicGain || ctx.state !== 'running') return;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  osc.type = wave;
+  osc.frequency.setValueAtTime(freq, now);
+  if (detuneCents !== 0) {
+    osc.detune.setValueAtTime(detuneCents, now);
+  }
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(cutoffHz, now);
+
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.linearRampToValueAtTime(volume, now + attackSec);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + durationSec);
+
+  osc.connect(filter);
+  filter.connect(g);
+  g.connect(musicGain);
+  osc.start(now);
+  osc.stop(now + durationSec + 0.04);
+}
+
+function startMusicSequencerForMode(mode: MusicMode) {
+  stopMusicSequencer(false);
+  if (mode === 'silent') return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  if (!ambientStarted) {
+    startProceduralAmbience(ctx);
+  }
+  if (!musicGain) return;
+
+  const now = ctx.currentTime;
+  const targetBusVol = mode === 'menu_suspense' ? 0.34 : mode === 'orbital' ? 0.28 : 0.32;
+  musicGain.gain.setTargetAtTime(targetBusVol, now, 0.25);
+  musicStepIndex = 0;
+
+  // Continuous low harmonic bed drone tailored to the active track
+  const droneOsc = ctx.createOscillator();
+  const droneFilter = ctx.createBiquadFilter();
+  const droneGain = ctx.createGain();
+  droneOsc.type = mode === 'menu_suspense' ? 'sawtooth' : 'triangle';
+  droneOsc.frequency.setValueAtTime(
+    mode === 'menu_suspense' ? 36.71 : mode === 'epic' ? 65.41 : mode === 'orbital' ? 82.41 : 55.0,
+    now
+  );
+  droneFilter.type = 'lowpass';
+  droneFilter.frequency.setValueAtTime(mode === 'menu_suspense' ? 125 : 180, now);
+  droneGain.gain.setValueAtTime(0.001, now);
+  droneGain.gain.linearRampToValueAtTime(mode === 'menu_suspense' ? 0.22 : 0.14, now + 0.8);
+  droneOsc.connect(droneFilter);
+  droneFilter.connect(droneGain);
+  droneGain.connect(musicGain);
+  droneOsc.start(now);
+  activeDroneNodes.push({
+    stop: () => {
+      try {
+        droneOsc.stop();
+        droneOsc.disconnect();
+      } catch {
+        // Ignore
+      }
+    },
+  });
+
+  const stepMs =
+    mode === 'menu_suspense' ? 460 : mode === 'epic' ? 360 : mode === 'orbital' ? 430 : 250;
+
+  const tickStep = () => {
+    if (!audioCtx || audioCtx.state !== 'running' || currentMusicMode !== mode) return;
+    const step = musicStepIndex % 16;
+    musicStepIndex += 1;
+
+    if (mode === 'menu_suspense') {
+      // Suspenseful minor/diminished cinematic tension (Dm -> Bb -> Gm7b5 -> A7sus4)
+      const bassRoots = [73.42, 73.42, 58.27, 55.0]; // D2, D2, Bb1, A1
+      const padChords = [
+        [146.83, 174.61, 220.0], // Dm
+        [146.83, 185.0, 233.08], // Tension aug/min swell
+        [116.54, 146.83, 174.61], // Bbmaj
+        [110.0, 155.56, 207.65], // A tritone/tension
+      ];
+      const bar = Math.floor(step / 4);
+      if (step % 4 === 0) {
+        playMusicVoice(audioCtx, bassRoots[bar], 1.75, 0.28, 'triangle', 190, 0.08);
+        padChords[bar].forEach((note, idx) => {
+          playMusicVoice(audioCtx, note, 1.85, 0.085, 'sawtooth', 420, 0.35, idx === 1 ? -6 : 6);
+        });
+      }
+      // Subtle radar sonar / suspense pulse
+      const suspenseMotif = [293.66, 0, 311.13, 0, 261.63, 0, 220.0, 0, 293.66, 0, 349.23, 0, 277.18, 0, 0, 220.0];
+      const ping = suspenseMotif[step];
+      if (ping > 0) {
+        playMusicVoice(audioCtx, ping, 0.85, 0.11, 'sine', 1600, 0.02);
+      }
+      // Heartbeat low thump on beats 0 and 2
+      if (step % 2 === 0) {
+        playMusicVoice(audioCtx, 52, 0.22, 0.16, 'sine', 120, 0.01);
+      }
+    } else if (mode === 'epic') {
+      // Uplifting Space Epic progression (C -> Am -> F -> G)
+      const bassNotes = [130.81, 110.0, 87.31, 98.0];
+      const chords = [
+        [261.63, 329.63, 392.0],
+        [220.0, 261.63, 329.63],
+        [174.61, 220.0, 261.63],
+        [196.0, 246.94, 293.66],
+      ];
+      const lead = [523.25, 0, 659.25, 587.33, 440.0, 0, 523.25, 493.88, 349.23, 440.0, 523.25, 0, 587.33, 493.88, 392.0, 0];
+      const bar = Math.floor(step / 4);
+      if (step % 4 === 0) {
+        playMusicVoice(audioCtx, bassNotes[bar], 1.4, 0.25, 'triangle', 260, 0.06);
+        chords[bar].forEach((n, i) => {
+          playMusicVoice(audioCtx, n, 1.5, 0.095, 'sawtooth', 780, 0.22, i % 2 === 0 ? -5 : 5);
+        });
+      }
+      const mel = lead[step];
+      if (mel > 0) {
+        playMusicVoice(audioCtx, mel, 0.65, 0.13, 'triangle', 2200, 0.03);
+      }
+    } else if (mode === 'orbital') {
+      // Serene Orbital Drift ambient arpeggios (Em9 -> Cmaj7 -> Gmaj7 -> Dadd9)
+      const arps = [
+        [164.81, 246.94, 329.63, 369.99],
+        [130.81, 196.0, 261.63, 329.63],
+        [196.0, 246.94, 293.66, 369.99],
+        [146.83, 220.0, 293.66, 329.63],
+      ];
+      const bar = Math.floor(step / 4);
+      const sub = step % 4;
+      if (sub === 0) {
+        playMusicVoice(audioCtx, arps[bar][0], 1.8, 0.18, 'sine', 300, 0.15);
+      }
+      playMusicVoice(audioCtx, arps[bar][sub] * 2, 1.15, 0.12, 'sine', 1800, 0.04);
+      if (sub === 2) {
+        playMusicVoice(audioCtx, arps[bar][1] * 2, 0.9, 0.07, 'triangle', 1200, 0.05);
+      }
+    } else if (mode === 'tactical') {
+      // Focused Mission Control Tactical Pulse (Am -> F -> Dm -> E)
+      const bassSeq = [110.0, 110.0, 87.31, 87.31, 73.42, 73.42, 82.41, 98.0];
+      const bassFreq = bassSeq[Math.floor(step / 2)];
+      playMusicVoice(audioCtx, bassFreq, 0.21, step % 2 === 0 ? 0.24 : 0.14, 'sawtooth', step % 2 === 0 ? 440 : 280, 0.01);
+
+      const arp = [440, 523.25, 659.25, 523.25, 349.23, 440, 523.25, 440, 293.66, 349.23, 440, 349.23, 329.63, 392.0, 493.88, 392.0];
+      if (step % 2 === 0 || step % 4 === 3) {
+        playMusicVoice(audioCtx, arp[step], 0.3, 0.095, 'square', 1100, 0.015);
+      }
+    }
+  };
+
+  tickStep();
+  musicTimerId = window.setInterval(tickStep, stepMs);
+}
+
+export function setMusicMode(mode: MusicMode) {
+  const modeChanged = currentMusicMode !== mode;
+  currentMusicMode = mode;
+
+  if (mode === 'silent') {
+    stopMusicSequencer(true);
+    return;
+  }
+
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  if (!ambientStarted) {
+    startProceduralAmbience(ctx);
+  }
+  if (ctx.state === 'running' && (modeChanged || musicTimerId === null)) {
+    startMusicSequencerForMode(mode);
+  }
+}
+
+export function getActiveMusicMode(): MusicMode {
+  return currentMusicMode;
+}
+
 export function initAudio() {
   const ctx = getAudioContext();
   if (!ctx) return;
   startProceduralAmbience(ctx);
+  if (currentMusicMode !== 'silent' && musicTimerId === null && ctx.state === 'running') {
+    startMusicSequencerForMode(currentMusicMode);
+  } else if (currentMusicMode !== 'silent' && ctx.state === 'suspended') {
+    ctx.resume().then(() => {
+      if (currentMusicMode !== 'silent' && musicTimerId === null) {
+        startMusicSequencerForMode(currentMusicMode);
+      }
+    }).catch(() => {});
+  }
 }
 
 export function toggleAudio(): boolean {
@@ -847,9 +1100,14 @@ export function toggleAudio(): boolean {
   if (masterGain && audioCtx) {
     masterGain.gain.setTargetAtTime(isAudioEnabled ? 1.0 : 0.0, audioCtx.currentTime, 0.05);
   }
-  if (isAudioEnabled && !ambientStarted) {
+  if (isAudioEnabled) {
     const ctx = getAudioContext();
-    if (ctx) startProceduralAmbience(ctx);
+    if (ctx && !ambientStarted) startProceduralAmbience(ctx);
+    if (currentMusicMode !== 'silent' && musicTimerId === null) {
+      startMusicSequencerForMode(currentMusicMode);
+    }
+  } else {
+    stopMissionVoice();
   }
   return isAudioEnabled;
 }
@@ -914,17 +1172,28 @@ export function playCarCrashSound(impactSpeed = 8) {
 // ----------------------------------------------------------------------------
 // 8. ROCKET COUNTDOWN VOICE, REFUEL PUMP, FLAMEOUT & SEA CRASH AUDIO
 // ----------------------------------------------------------------------------
-const COUNTDOWN_WORDS: Record<number | 'liftoff', string> = {
-  5: 'Cinco',
-  4: 'Quatro',
-  3: 'Três',
-  2: 'Dois',
-  1: 'Um',
-  liftoff: 'Descolar!',
+const COUNTDOWN_WORDS: Record<'pt' | 'en', Record<number | 'liftoff', string>> = {
+  pt: {
+    5: 'Cinco',
+    4: 'Quatro',
+    3: 'Três',
+    2: 'Dois',
+    1: 'Um',
+    liftoff: 'Descolar!',
+  },
+  en: {
+    5: 'Five',
+    4: 'Four',
+    3: 'Three',
+    2: 'Two',
+    1: 'One',
+    liftoff: 'Liftoff!',
+  },
 };
 
-export function playCountdownVoice(step: 5 | 4 | 3 | 2 | 1 | 'liftoff') {
+export function playCountdownVoice(step: 5 | 4 | 3 | 2 | 1 | 'liftoff', lang?: 'pt' | 'en') {
   if (!isAudioEnabled) return;
+  const activeLang = lang || useGameStore.getState().language || 'pt';
 
   // 1. Crisp Mission Control Telemetry Beep / Ignition Chime (always audible)
   const ctx = getAudioContext();
@@ -967,22 +1236,25 @@ export function playCountdownVoice(step: 5 | 4 | 3 | 2 | 1 | 'liftoff') {
     }
   }
 
-  // 2. Spoken Portuguese Countdown Voice via Web Speech API
+  // 2. Spoken Countdown Voice (PT or EN) via Web Speech API
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       const synth = window.speechSynthesis;
       synth.cancel();
-      const text = COUNTDOWN_WORDS[step] || String(step);
+      const text = COUNTDOWN_WORDS[activeLang][step] || String(step);
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = 'pt-PT';
+      utter.lang = activeLang === 'en' ? 'en-US' : 'pt-PT';
       utter.rate = step === 'liftoff' ? 1.05 : 1.0;
       utter.pitch = step === 'liftoff' ? 1.08 : 0.94;
       utter.volume = 1.0;
       const voices = synth.getVoices();
-      const ptVoice =
-        voices.find((v) => v.lang.toLowerCase().startsWith('pt-pt')) ||
-        voices.find((v) => v.lang.toLowerCase().startsWith('pt'));
-      if (ptVoice) utter.voice = ptVoice;
+      const preferredVoice =
+        activeLang === 'en'
+          ? voices.find((v) => v.lang.toLowerCase().startsWith('en-us')) ||
+            voices.find((v) => v.lang.toLowerCase().startsWith('en'))
+          : voices.find((v) => v.lang.toLowerCase().startsWith('pt-pt')) ||
+            voices.find((v) => v.lang.toLowerCase().startsWith('pt'));
+      if (preferredVoice) utter.voice = preferredVoice;
       synth.speak(utter);
     } catch {
       // Speech synthesis gracefully falls back to telemetry tones if blocked
@@ -1101,21 +1373,29 @@ export function playRocketSeaCrashSound() {
   splashGain.connect(masterGain || ctx.destination);
   splashSource.start(now);
 
-  // 3. Spoken warning in Portuguese (optional enhancement)
+  // 3. Spoken warning in Portuguese or English
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
+      const activeLang = useGameStore.getState().language || 'pt';
       const synth = window.speechSynthesis;
       synth.cancel();
-      const utter = new SpeechSynthesisUtterance('Falha de combustível! Foguete caiu no mar!');
-      utter.lang = 'pt-PT';
+      const utter = new SpeechSynthesisUtterance(
+        activeLang === 'en'
+          ? 'Fuel failure! Rocket crashed into the ocean!'
+          : 'Falha de combustível! Foguete caiu no mar!'
+      );
+      utter.lang = activeLang === 'en' ? 'en-US' : 'pt-PT';
       utter.rate = 1.05;
       utter.pitch = 0.95;
       utter.volume = 0.95;
       const voices = synth.getVoices();
-      const ptVoice =
-        voices.find((v) => v.lang.toLowerCase().startsWith('pt-pt')) ||
-        voices.find((v) => v.lang.toLowerCase().startsWith('pt'));
-      if (ptVoice) utter.voice = ptVoice;
+      const preferredVoice =
+        activeLang === 'en'
+          ? voices.find((v) => v.lang.toLowerCase().startsWith('en-us')) ||
+            voices.find((v) => v.lang.toLowerCase().startsWith('en'))
+          : voices.find((v) => v.lang.toLowerCase().startsWith('pt-pt')) ||
+            voices.find((v) => v.lang.toLowerCase().startsWith('pt'));
+      if (preferredVoice) utter.voice = preferredVoice;
       synth.speak(utter);
     } catch {
       // Fallback already covered by Web Audio splash/impact
@@ -1233,6 +1513,137 @@ export function playSolarEvaporationSound() {
   og.connect(masterGain || ctx.destination);
   osc.start(now);
   osc.stop(now + dur);
+}
+
+export function stopMissionVoice() {
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      // Ignore speech cancellation error
+    }
+  }
+}
+
+export function speakMissionTip(text: string, lang?: 'pt' | 'en') {
+  if (!isAudioEnabled || !text) return;
+  const activeLang = lang || useGameStore.getState().language || 'pt';
+
+  // Subtle Mission Control radio squelch chime before spoken mission tip
+  const ctx = getAudioContext();
+  if (ctx) {
+    const now = ctx.currentTime;
+    [940, 1280].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.08);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.08, now + i * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.09);
+      osc.connect(gain);
+      gain.connect(masterGain || ctx.destination);
+      osc.start(now + i * 0.08);
+      osc.stop(now + i * 0.08 + 0.09);
+    });
+  }
+
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    try {
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = activeLang === 'en' ? 'en-US' : 'pt-PT';
+      utter.rate = 0.98;
+      utter.pitch = 1.0;
+      utter.volume = 1.0;
+      const voices = synth.getVoices();
+      const preferredVoice =
+        activeLang === 'en'
+          ? voices.find((v) => v.lang.toLowerCase().startsWith('en-us')) ||
+            voices.find((v) => v.lang.toLowerCase().startsWith('en-gb')) ||
+            voices.find((v) => v.lang.toLowerCase().startsWith('en'))
+          : voices.find((v) => v.lang.toLowerCase().startsWith('pt-pt')) ||
+            voices.find((v) => v.lang.toLowerCase().startsWith('pt'));
+      if (preferredVoice) utter.voice = preferredVoice;
+      synth.speak(utter);
+    } catch {
+      // Speech synthesis gracefully falls back to visual HUD tip
+    }
+  }
+}
+
+export function playSuitEquipSound() {
+  const ctx = getAudioContext();
+  if (!ctx || !isAudioEnabled) return;
+  const now = ctx.currentTime;
+
+  // Metallic neck-ring lock click + brief suit pressurization hiss
+  [0, 0.14].forEach((offset, idx) => {
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(idx === 0 ? 460 : 680, now + offset);
+    osc.frequency.exponentialRampToValueAtTime(idx === 0 ? 220 : 340, now + offset + 0.07);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.24, now + offset);
+    g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.08);
+    osc.connect(g);
+    g.connect(masterGain || ctx.destination);
+    osc.start(now + offset);
+    osc.stop(now + offset + 0.08);
+  });
+
+  const dur = 0.45;
+  const bufSize = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) {
+    const t = i / ctx.sampleRate;
+    ch[i] = (Math.random() * 2 - 1) * Math.exp(-t / 0.16);
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(1900, now + 0.18);
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.16, now + 0.18);
+  ng.gain.exponentialRampToValueAtTime(0.001, now + 0.18 + dur);
+  src.connect(bp);
+  bp.connect(ng);
+  ng.connect(masterGain || ctx.destination);
+  src.start(now + 0.18);
+}
+
+export function playFlagPlantSound() {
+  const ctx = getAudioContext();
+  if (!ctx || !isAudioEnabled) return;
+  const now = ctx.currentTime;
+
+  // Heavy anchor impact into lunar regolith + triumphant Mission Accomplished chord
+  const impact = ctx.createOscillator();
+  impact.type = 'sine';
+  impact.frequency.setValueAtTime(140, now);
+  impact.frequency.exponentialRampToValueAtTime(38, now + 0.25);
+  const ig = ctx.createGain();
+  ig.gain.setValueAtTime(0.36, now);
+  ig.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+  impact.connect(ig);
+  ig.connect(masterGain || ctx.destination);
+  impact.start(now);
+  impact.stop(now + 0.28);
+
+  [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, now + 0.18 + idx * 0.09);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.16, now + 0.18 + idx * 0.09);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.95 + idx * 0.09);
+    osc.connect(g);
+    g.connect(masterGain || ctx.destination);
+    osc.start(now + 0.18 + idx * 0.09);
+    osc.stop(now + 0.98 + idx * 0.09);
+  });
 }
 
 export function updateAudio(isHostile?: boolean, gravity?: number) {

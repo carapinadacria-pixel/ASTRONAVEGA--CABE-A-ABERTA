@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { DoubleSide, LinearFilter, LinearMipmapLinearFilter, Texture, CanvasTexture, PlaneGeometry } from 'three';
+import { DoubleSide, LinearFilter, LinearMipmapLinearFilter, Texture, CanvasTexture, PlaneGeometry, SRGBColorSpace } from 'three';
 import { useTexture } from '@react-three/drei';
 
 interface AngolaFlagProps {
@@ -574,6 +574,88 @@ export function CabecaAbertaLogoDecal({
       </mesh>
     </group>
   );
+}
+
+let cachedOfficialAngolaFlagTex: CanvasTexture | null = null;
+
+export function getOfficialAngolaFlagTexture(): CanvasTexture | null {
+  if (cachedOfficialAngolaFlagTex) return cachedOfficialAngolaFlagTex;
+  if (typeof document === 'undefined') return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 682;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  // Immediate Angola flag base fill while high-res image loads
+  ctx.fillStyle = '#cc092f';
+  ctx.fillRect(0, 0, canvas.width, canvas.height / 2);
+  ctx.fillStyle = '#09090b';
+  ctx.fillRect(0, canvas.height / 2, canvas.width, canvas.height / 2);
+
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = SRGBColorSpace;
+  tex.generateMipmaps = false;
+  tex.minFilter = LinearFilter;
+  tex.magFilter = LinearFilter;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  cachedOfficialAngolaFlagTex = tex;
+
+  const img = new Image();
+  img.src = '/angola_flag.jpg';
+  img.onload = () => {
+    const tmp = document.createElement('canvas');
+    tmp.width = img.naturalWidth || img.width;
+    tmp.height = img.naturalHeight || img.height;
+    const tctx = tmp.getContext('2d');
+    if (tctx && tmp.width > 0 && tmp.height > 0) {
+      tctx.drawImage(img, 0, 0);
+      const { data, width, height } = tctx.getImageData(0, 0, tmp.width, tmp.height);
+
+      // Trim any light-grey studio padding around the red/black Angola flag fabric
+      let minX = width;
+      let minY = height;
+      let maxX = 0;
+      let maxY = 0;
+      let found = false;
+
+      for (let y = 0; y < height; y += 2) {
+        for (let x = 0; x < width; x += 2) {
+          const idx = (y * width + x) * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          const isRed = r > 120 && g < 85 && b < 85;
+          const isBlack = r < 70 && g < 70 && b < 70;
+          if (isRed || isBlack) {
+            found = true;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+
+      if (found && maxX - minX > width * 0.25 && maxY - minY > height * 0.2) {
+        const pad = 2;
+        const sx = Math.max(0, minX + pad);
+        const sy = Math.max(0, minY + pad);
+        const sw = Math.max(1, maxX - minX - pad * 2);
+        const sh = Math.max(1, maxY - minY - pad * 2);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(tmp, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      }
+      tex.needsUpdate = true;
+    }
+  };
+
+  return cachedOfficialAngolaFlagTex;
 }
 
 useTexture.preload('/angola_flag.jpg');

@@ -7,11 +7,13 @@ import { Player } from './Player';
 import { PlanetEnvironment } from './PlanetEnvironment';
 import { Rocket } from './Rocket';
 import { SpaceScene } from './SpaceScene';
-import { useGameStore, PLANETS } from '../store';
+import { useGameStore, PLANETS, GameMusicTrack } from '../store';
 import { Joystick } from './Joystick';
 import { MobileActionControls } from './MobileActionControls';
-import { initAudio, updateAudio, toggleAudio, playRefuelPumpSound, setAudioEnvironment } from '../audio';
+import { initAudio, updateAudio, toggleAudio, playRefuelPumpSound, setAudioEnvironment, stopMissionVoice, setMusicMode } from '../audio';
 import { initGameDatabase, saveGameStateToDB, loadGameStateFromDB, getDatabaseStatus } from '../utils/gameDatabase';
+import { ModeSelectionScreen, StoryVideoPlayerScreen, StoryMissionHUD, StoryTopRightActionButtons } from './StoryModeOverlays';
+import { UI_TEXT, getPlanetName } from '../utils/i18n';
 import {
   Crosshair,
   Shield,
@@ -37,6 +39,9 @@ import {
   Fuel,
   Scale,
   Wind,
+  Languages,
+  Music,
+  VolumeX,
 } from 'lucide-react';
 import { InventoryModal } from './InventoryModal';
 import { ComputerBookLibraryModal } from './ComputerBookLibraryModal';
@@ -108,6 +113,8 @@ const WebGLFallbackScreen = memo(function WebGLFallbackScreen({
   onRetry,
 }: WebGLFallbackScreenProps) {
   const [showDetails, setShowDetails] = useState(false);
+  const language = useGameStore((s) => s.language);
+  const isEn = language === 'en';
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 sm:p-6 bg-[#040814] text-white select-none overflow-y-auto">
@@ -125,11 +132,11 @@ const WebGLFallbackScreen = memo(function WebGLFallbackScreen({
           <div className="h-4 w-[1px] bg-white/20" />
           <div className="flex items-center gap-2">
             <img
-              src="/nasa_space_apps_luanda.svg"
-              alt="Space Apps Luanda"
-              className="h-7 w-7 object-contain rounded-full shadow-sm"
+              src="/cabeca_aberta_logo.png"
+              alt="Cabeça Aberta"
+              className="h-7 w-auto object-contain rounded shadow-sm"
             />
-            <span className="text-xs font-bold tracking-wider text-slate-200">Space Apps Luanda</span>
+            <span className="text-xs font-bold tracking-wider text-slate-200">Cabeça Aberta</span>
           </div>
         </div>
 
@@ -143,10 +150,12 @@ const WebGLFallbackScreen = memo(function WebGLFallbackScreen({
         {/* Title & Description */}
         <div className="flex flex-col gap-2">
           <h2 className="text-xl sm:text-2xl font-black tracking-tight uppercase text-transparent bg-clip-text bg-gradient-to-r from-blue-300 via-indigo-300 to-cyan-400">
-            Simulador Espacial Angolano
+            {isEn ? 'Angolan Space Simulator' : 'Simulador Espacial Angolano'}
           </h2>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Se a aceleração gráfica já estiver ativada no Chrome, toque no botão abaixo para carregar imediatamente o ambiente 3D, hangar, cápsula e superfícies planetárias.
+            {isEn
+              ? 'If hardware acceleration is active in your browser, tap below to load the 3D environment, hangar, spacecraft, and planetary surfaces.'
+              : 'Se a aceleração gráfica já estiver ativada no Chrome, toque no botão abaixo para carregar imediatamente o ambiente 3D, hangar, cápsula e superfícies planetárias.'}
           </p>
         </div>
 
@@ -158,7 +167,7 @@ const WebGLFallbackScreen = memo(function WebGLFallbackScreen({
               className="w-full py-4 px-6 bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 active:scale-98 text-white rounded-2xl text-sm font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-blue-500/30 cursor-pointer"
             >
               <RefreshCw className="w-5 h-5 animate-spin-reverse" />
-              <span>▶️ Iniciar Simulação 3D Agora</span>
+              <span>{isEn ? 'Start 3D Simulation Now' : 'Iniciar Simulação 3D Agora'}</span>
             </button>
           )}
 
@@ -167,7 +176,7 @@ const WebGLFallbackScreen = memo(function WebGLFallbackScreen({
             className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-300 hover:text-white rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-white/10 cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
-            <span>Recarregar Página</span>
+            <span>{isEn ? 'Reload Page' : 'Recarregar Página'}</span>
           </button>
         </div>
 
@@ -175,10 +184,12 @@ const WebGLFallbackScreen = memo(function WebGLFallbackScreen({
         <div className="bg-slate-950/70 border border-white/10 rounded-2xl p-4 text-left flex flex-col gap-2 text-xs text-slate-300">
           <div className="flex items-center gap-2 font-bold text-blue-300 uppercase tracking-wider text-[11px]">
             <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0" />
-            <span>Informações do Sistema Gráfico</span>
+            <span>{isEn ? 'Graphics System Info' : 'Informações do Sistema Gráfico'}</span>
           </div>
           <p className="text-[11px] text-slate-400">
-            A aceleração por hardware permite alto desempenho na exploração dos planetas. Toque em "Iniciar Simulação 3D Agora" para prosseguir.
+            {isEn
+              ? 'Hardware acceleration enables smooth planetary exploration. Tap Start 3D Simulation to proceed.'
+              : 'A aceleração por hardware permite alto desempenho na exploração dos planetas. Toque em "Iniciar Simulação 3D Agora" para prosseguir.'}
           </p>
         </div>
 
@@ -189,7 +200,15 @@ const WebGLFallbackScreen = memo(function WebGLFallbackScreen({
               onClick={() => setShowDetails(!showDetails)}
               className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center gap-1.5 w-full cursor-pointer"
             >
-              <span>{showDetails ? 'Ocultar Detalhes Técnicos' : 'Ver Detalhes do Erro'}</span>
+              <span>
+                {showDetails
+                  ? isEn
+                    ? 'Hide Technical Details'
+                    : 'Ocultar Detalhes Técnicos'
+                  : isEn
+                  ? 'View Error Details'
+                  : 'Ver Detalhes do Erro'}
+              </span>
             </button>
             {showDetails && (
               <div className="mt-2 p-3 bg-black/60 rounded-xl border border-rose-500/30 text-left font-mono text-[10px] text-rose-300 break-words max-h-32 overflow-y-auto">
@@ -501,7 +520,8 @@ const CrosshairOverlay = memo(function CrosshairOverlay() {
 const HUDHeader = memo(function HUDHeader() {
   const scene = useGameStore((state) => state.scene);
   const planetIndex = useGameStore((state) => state.planetIndex);
-  const gravity = useGameStore((state) => state.gravity);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
 
   if (scene !== 'surface') return null;
@@ -509,12 +529,12 @@ const HUDHeader = memo(function HUDHeader() {
   return (
     <div className="absolute top-5 left-4 sm:top-6 sm:left-6 text-white pointer-events-none drop-shadow-lg flex flex-col gap-1.5 z-20">
       <h1 className="text-2xl sm:text-3xl font-black tracking-tighter uppercase text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-600">
-        {currentPlanet.name}
+        {getPlanetName(currentPlanet.id, currentPlanet.name, language)}
       </h1>
       <div className="flex items-center gap-2 text-xs sm:text-sm font-mono text-gray-200">
         <Activity className="w-4 h-4 text-blue-400" />
         <span>
-          Gravidade: {currentPlanet.gravity.toFixed(2)} m/s² ({(currentPlanet.gravity / 9.8).toFixed(2)} G)
+          {t.gravityLabel}: {currentPlanet.gravity.toFixed(2)} m/s² ({(currentPlanet.gravity / 9.8).toFixed(2)} G)
         </span>
       </div>
 
@@ -524,19 +544,19 @@ const HUDHeader = memo(function HUDHeader() {
             NASA Exoplanet Archive
           </h3>
           <div className="text-[11px] text-blue-100 flex justify-between">
-            <span>Distância:</span> <span>{currentPlanet.distance ? currentPlanet.distance.toFixed(1) + ' parsecs' : 'Desconhecida'}</span>
+            <span>{t.distanceLabel}:</span> <span>{currentPlanet.distance ? currentPlanet.distance.toFixed(1) + ' parsecs' : t.unknown}</span>
           </div>
           <div className="text-[11px] text-blue-100 flex justify-between">
-            <span>Massa (Terra=1):</span> <span>{currentPlanet.mass ? currentPlanet.mass.toFixed(2) : 'Estimada'}</span>
+            <span>{t.massLabel}:</span> <span>{currentPlanet.mass ? currentPlanet.mass.toFixed(2) : t.estimated}</span>
           </div>
           <div className="text-[11px] text-blue-100 flex justify-between">
-            <span>Raio (Terra=1):</span> <span>{currentPlanet.radius ? currentPlanet.radius.toFixed(2) : 'Estimado'}</span>
+            <span>{t.radiusLabel}:</span> <span>{currentPlanet.radius ? currentPlanet.radius.toFixed(2) : t.estimatedMasc}</span>
           </div>
           <div className="text-[11px] text-blue-100 flex justify-between">
-            <span>Descoberta:</span> <span>{currentPlanet.discoveryYear || 'N/A'} ({currentPlanet.discoveryMethod})</span>
+            <span>{t.discoveryLabel}:</span> <span>{currentPlanet.discoveryYear || 'N/A'} ({currentPlanet.discoveryMethod})</span>
           </div>
           <div className="text-[11px] text-blue-100 flex justify-between">
-            <span>Temp. Equilíbrio:</span> <span>{currentPlanet.temperature ? currentPlanet.temperature.toFixed(0) + ' K' : 'Desconhecida'}</span>
+            <span>{t.eqTempLabel}:</span> <span>{currentPlanet.temperature ? currentPlanet.temperature.toFixed(0) + ' K' : t.unknown}</span>
           </div>
           <a
             href="https://exoplanetarchive.ipac.caltech.edu/"
@@ -544,7 +564,7 @@ const HUDHeader = memo(function HUDHeader() {
             rel="noreferrer"
             className="text-[10px] text-blue-400 text-center hover:underline mt-1"
           >
-            Dados fornecidos por NASA Caltech
+            {t.nasaCaltechSource}
           </a>
         </div>
       )}
@@ -556,10 +576,15 @@ const HUDHeader = memo(function HUDHeader() {
 const SpaceFlightHUD = memo(function SpaceFlightHUD() {
   const scene = useGameStore((state) => state.scene);
   const spaceFlightData = useGameStore((state) => state.spaceFlightData);
+  const gameMode = useGameStore((state) => state.gameMode);
+  const storyStep = useGameStore((state) => state.storyStep);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
   const { speed, target, distKm, stagingProgress, solarHeatPct, isEvaporating } = spaceFlightData;
 
   if (scene !== 'space') return null;
 
+  const isStoryAuto = gameMode === 'story' && storyStep === 'autopilot_to_moon';
   const isStaging = stagingProgress < 1.0;
   const stagePercent = Math.round(stagingProgress * 100);
 
@@ -570,7 +595,7 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
         <div className="w-full bg-red-950/95 backdrop-blur-2xl border-2 border-orange-400 rounded-2xl px-4 py-3 shadow-[0_0_32px_rgba(249,115,22,0.7)] flex items-center justify-center gap-2 text-orange-100 animate-pulse">
           <AlertTriangle className="w-5 h-5 text-orange-300 shrink-0" />
           <span className="text-xs sm:text-sm font-black uppercase tracking-wide text-center">
-            CÁPSULA EVAPORADA PELO SOL! A renascer no espaço em órbita segura...
+            {t.evaporatedMsg}
           </span>
         </div>
       ) : solarHeatPct > 0 ? (
@@ -578,7 +603,7 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
           <div className="flex items-center gap-2">
             <Sun className="w-4 h-4 text-amber-300 shrink-0" />
             <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wide">
-              CALOR SOLAR EXTREMO ({solarHeatPct}%) — AFASTE-SE DO SOL!
+              {t.extremeSolarHeat} ({solarHeatPct}%) — {t.stayAwayFromSun}
             </span>
           </div>
           <div className="w-20 bg-black/50 rounded-full h-1.5 overflow-hidden border border-amber-400/40 shrink-0">
@@ -598,11 +623,17 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping inline-block" />
               <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
-                🛰️ GGPEN • DESENCAPSULAMENTO ORBITAL ({stagePercent}%)
+                {t.stagingHeader} ({stagePercent}%)
               </span>
             </div>
             <span className="text-[10px] font-mono text-amber-200/90 bg-amber-950/80 px-2 py-0.5 rounded-md border border-amber-500/30">
-              {stagingProgress < 0.25 ? 'Etapa 1/4' : stagingProgress < 0.55 ? 'Etapa 2/4' : stagingProgress < 0.80 ? 'Etapa 3/4' : 'Etapa 4/4'}
+              {stagingProgress < 0.25
+                ? `${t.stageWord} 1/4`
+                : stagingProgress < 0.55
+                ? `${t.stageWord} 2/4`
+                : stagingProgress < 0.80
+                ? `${t.stageWord} 3/4`
+                : `${t.stageWord} 4/4`}
             </span>
           </div>
 
@@ -619,37 +650,37 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
             {stagingProgress < 0.25 ? (
               <>
                 <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                  <span>⚡</span> ETAPA 1: Ejeção das Coifas Protetoras Aerodinâmicas
+                  <span>⚡</span> {t.stage1Title}
                 </span>
                 <span className="text-[10px] sm:text-[11px] text-slate-300 leading-snug">
-                  As metades da carenagem que protegeram a cápsula na subida atmosférica separam-se por impulsos pirotécnicos laterais.
+                  {t.stage1Desc}
                 </span>
               </>
             ) : stagingProgress < 0.55 ? (
               <>
                 <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                  <span>🚀</span> ETAPA 2: Separação e Recuo do 2º Estágio do Lançador
+                  <span>🚀</span> {t.stage2Title}
                 </span>
                 <span className="text-[10px] sm:text-[11px] text-slate-300 leading-snug">
-                  O corpo cilíndrico do foguete pesado desacopla-se, recuando para o fundo do espaço e deixando livre a cápsula pequena orbital.
+                  {t.stage2Desc}
                 </span>
               </>
             ) : stagingProgress < 0.80 ? (
               <>
                 <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                  <span>☀️</span> ETAPA 3: Desdobramento das Matrizes Solares & RCS
+                  <span>☀️</span> {t.stage3Title}
                 </span>
                 <span className="text-[10px] sm:text-[11px] text-slate-300 leading-snug">
-                  Abertura das asas de painéis solares para geração de energia fotovoltaica e calibração dos motores de atitude RCS.
+                  {t.stage3Desc}
                 </span>
               </>
             ) : (
               <>
                 <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                  <span>✨</span> ETAPA 4: Cápsula Orbital Pronta • Comandos Transferidos
+                  <span>✨</span> {t.stage4Title}
                 </span>
                 <span className="text-[10px] sm:text-[11px] text-slate-300 leading-snug">
-                  Nave pequena 100% autônoma e operacional! Utilize o joystick ou teclas para navegar rumo aos planetas do Sistema Solar.
+                  {t.stage4Desc}
                 </span>
               </>
             )}
@@ -661,7 +692,7 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <div className="flex flex-col">
-              <span className="text-[9px] uppercase font-mono tracking-wider text-slate-400">Velocidade</span>
+              <span className="text-[9px] uppercase font-mono tracking-wider text-slate-400">{t.speedLabel}</span>
               <span className="text-xs sm:text-sm font-bold font-mono text-cyan-300">{speed} km/h</span>
             </div>
           </div>
@@ -669,14 +700,14 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
           <div className="w-px h-6 bg-white/15" />
 
           <div className="flex flex-col">
-            <span className="text-[9px] uppercase font-mono tracking-wider text-slate-400">Planeta Alvo</span>
+            <span className="text-[9px] uppercase font-mono tracking-wider text-slate-400">{t.targetPlanetLabel}</span>
             <span className="text-xs sm:text-sm font-bold text-amber-300">{target.toUpperCase()}</span>
           </div>
 
           <div className="w-px h-6 bg-white/15" />
 
           <div className="flex flex-col">
-            <span className="text-[9px] uppercase font-mono tracking-wider text-slate-400">Distância</span>
+            <span className="text-[9px] uppercase font-mono tracking-wider text-slate-400">{t.distanceLabel}</span>
             <span className="text-xs sm:text-sm font-bold font-mono text-emerald-300">{distKm} km</span>
           </div>
         </div>
@@ -684,8 +715,8 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
 
       {/* Flight Control Reminder */}
       <div className="bg-black/65 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[9px] sm:text-[10px] font-mono text-slate-300 flex items-center gap-1.5 shadow-md">
-        <span>🎮</span>
-        <span>Manete Invertida: Empurrar para baixo mergulha, puxar para cima sobe</span>
+        <span>{isStoryAuto ? '🛰️' : '🎮'}</span>
+        <span>{isStoryAuto ? t.storyAutopilotNote : t.manualFlightNote}</span>
       </div>
     </div>
   );
@@ -695,6 +726,8 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
 const EarthLaunchHUD = memo(function EarthLaunchHUD() {
   const scene = useGameStore((state) => state.scene);
   const launchTelemetry = useGameStore((state) => state.launchTelemetry);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
 
   if (scene !== 'surface' || launchTelemetry.status === 'idle') return null;
 
@@ -730,12 +763,12 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
               }`}
             >
               {isCrashed
-                ? 'IMPACTO NO MAR'
+                ? t.seaImpact
                 : isFlameout
-                ? 'SEM COMBUSTÍVEL!'
+                ? t.noFuelStatus
                 : isCountdown
-                ? 'CONTAGEM LANÇAMENTO'
-                : 'FOGUETE EM VOO'}
+                ? t.launchCountdown
+                : t.rocketInFlight}
             </span>
           </div>
           <span className="text-[8px] sm:text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-400/40">
@@ -747,18 +780,18 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
         <div className="flex items-center justify-between bg-slate-900/90 rounded-xl px-2.5 py-1.5 sm:px-3.5 sm:py-2 border border-white/10">
           <div className="flex flex-col">
             <span className="text-[8px] sm:text-[10px] uppercase font-mono tracking-wider text-slate-400">
-              {isCountdown ? 'Ignição em' : isFlameout || isCrashed ? 'Emergência' : 'Propulsão'}
+              {isCountdown ? t.ignitionIn : isFlameout || isCrashed ? t.emergency : t.propulsion}
             </span>
             <span className="text-[10px] sm:text-xs font-bold text-slate-100 leading-tight">
               {isCrashed
-                ? 'Caiu no Oceano!'
+                ? t.fellInOcean
                 : isFlameout
-                ? 'Queda livre em curso...'
+                ? t.freefallActive
                 : isCountdown
                 ? countVal > 2
-                  ? 'Torre a retrair...'
-                  : 'Pré-Ignição!'
-                : 'Subida Orbital'}
+                  ? t.towerRetracting
+                  : t.preIgnition
+                : t.orbitalAscent}
             </span>
           </div>
           <div
@@ -770,7 +803,7 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
                 : 'bg-emerald-500/25 border-emerald-400 text-emerald-300'
             }`}
           >
-            {isCrashed ? 'QUEDA' : isFlameout ? 'FALHA' : isCountdown ? `T-${countVal}s` : 'VOANDO'}
+            {isCrashed ? t.crashBadge : isFlameout ? t.failBadge : isCountdown ? `T-${countVal}s` : t.flyingBadge}
           </div>
         </div>
 
@@ -779,7 +812,7 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
           {/* Fuel Gauge */}
           <div className="bg-slate-900/80 rounded-xl p-1.5 sm:p-2 border border-white/10 flex flex-col gap-1">
             <div className="flex items-center justify-between text-[8px] sm:text-[10px] font-mono uppercase text-slate-400">
-              <span>Combust.</span>
+              <span>{t.fuelShort}</span>
               <span className={`font-bold text-[9px] sm:text-xs ${launchTelemetry.fuel < 25 ? 'text-red-400' : 'text-amber-300'}`}>
                 {launchTelemetry.fuel}%
               </span>
@@ -799,7 +832,7 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
           {/* Velocity (KM/H) & Altitude Readout */}
           <div className="bg-slate-900/80 rounded-xl p-1.5 sm:p-2 border border-white/10 flex flex-col justify-between">
             <div className="flex items-center justify-between text-[8px] sm:text-[10px] font-mono uppercase text-slate-400">
-              <span>Vel.</span>
+              <span>{t.velShort}</span>
               <span className="text-[8px] sm:text-[9px] text-cyan-400 font-bold">{launchTelemetry.altitude}m</span>
             </div>
             <div className="text-xs sm:text-base font-black font-mono text-cyan-300 leading-none">
@@ -812,10 +845,10 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
         <div className="bg-slate-900/80 rounded-xl px-2 py-1 sm:px-2.5 sm:py-1.5 border border-white/10 flex items-center justify-between text-[9px] sm:text-[11px] font-mono">
           <span className="flex items-center gap-1 text-slate-400 uppercase">
             <Scale className="w-3 h-3 text-amber-400" />
-            <span>Peso Foguete</span>
+            <span>{t.rocketWeight}</span>
           </span>
           <span className="font-black text-amber-200">
-            {launchTelemetry.weightTons.toLocaleString('pt-PT')} t
+            {launchTelemetry.weightTons.toLocaleString(language === 'en' ? 'en-US' : 'pt-PT')} t
           </span>
         </div>
       </div>
@@ -834,6 +867,9 @@ const MissionControlCenterView = memo(function MissionControlCenterView() {
   const gravity = useGameStore((state) => state.gravity);
   const health = useGameStore((state) => state.health);
   const oxygen = useGameStore((state) => state.oxygen);
+  const language = useGameStore((state) => state.language);
+  const isEn = language === 'en';
+  const t = UI_TEXT[language];
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
 
   if (isWebGLActive) return null;
@@ -848,40 +884,49 @@ const MissionControlCenterView = memo(function MissionControlCenterView() {
             <span className="text-xs font-bold tracking-wider text-slate-200">GGPEN</span>
           </div>
           <div className="text-[10px] uppercase font-mono text-cyan-300 font-bold bg-cyan-950/80 px-2.5 py-1 rounded-full border border-cyan-500/40">
-            Centro de Controlo 2D
+            {isEn ? '2D Control Center' : 'Centro de Controlo 2D'}
           </div>
           <div className="flex items-center gap-2">
-            <img src="/nasa_space_apps_luanda.svg" alt="Space Apps" className="h-6 sm:h-7 w-6 sm:w-7 object-contain rounded-full shadow-sm" />
-            <span className="text-xs font-bold tracking-wider text-slate-200 hidden sm:inline">Space Apps</span>
+            <img src="/cabeca_aberta_logo.png" alt="Cabeça Aberta" className="h-6 sm:h-7 w-auto object-contain rounded shadow-sm" />
+            <span className="text-xs font-bold tracking-wider text-slate-200 hidden sm:inline">Cabeça Aberta</span>
           </div>
         </div>
 
         {/* Title */}
         <div className="flex flex-col gap-1">
           <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-300 via-indigo-300 to-cyan-300">
-            {currentPlanet.name} • {scene === 'surface' ? 'Base Terrestre' : 'Espaço Orbital'}
+            {getPlanetName(currentPlanet.id, currentPlanet.name, language)} •{' '}
+            {scene === 'surface'
+              ? isEn
+                ? 'Surface Base'
+                : 'Base Terrestre'
+              : isEn
+              ? 'Orbital Space'
+              : 'Espaço Orbital'}
           </h2>
           <p className="text-xs text-slate-300">
-            Ambiente da Missão • Gravidade: {currentPlanet.gravity.toFixed(2)} m/s² ({(currentPlanet.gravity / 9.8).toFixed(2)} G)
+            {t.gravityLabel}: {currentPlanet.gravity.toFixed(2)} m/s² ({(currentPlanet.gravity / 9.8).toFixed(2)} G)
           </p>
         </div>
 
         {/* Mission Telemetry Summary */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
           <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-white/10 flex flex-col items-center">
-            <span className="text-[10px] text-slate-400 uppercase font-mono">Modo</span>
-            <span className="font-bold text-cyan-300 capitalize">{scene === 'surface' ? 'Superfície' : 'Orbital'}</span>
+            <span className="text-[10px] text-slate-400 uppercase font-mono">{isEn ? 'Mode' : 'Modo'}</span>
+            <span className="font-bold text-cyan-300 capitalize">
+              {scene === 'surface' ? (isEn ? 'Surface' : 'Superfície') : isEn ? 'Orbital' : 'Orbital'}
+            </span>
           </div>
           <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-white/10 flex flex-col items-center">
-            <span className="text-[10px] text-slate-400 uppercase font-mono">Gravidade</span>
+            <span className="text-[10px] text-slate-400 uppercase font-mono">{t.gravityLabel}</span>
             <span className="font-bold text-emerald-300">{gravity} m/s²</span>
           </div>
           <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-white/10 flex flex-col items-center">
-            <span className="text-[10px] text-slate-400 uppercase font-mono">Traje</span>
+            <span className="text-[10px] text-slate-400 uppercase font-mono">{t.suitLabel}</span>
             <span className="font-bold text-amber-300">{health}%</span>
           </div>
           <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-white/10 flex flex-col items-center">
-            <span className="text-[10px] text-slate-400 uppercase font-mono">Oxigénio</span>
+            <span className="text-[10px] text-slate-400 uppercase font-mono">O₂</span>
             <span className="font-bold text-blue-300">{oxygen.toFixed(0)}%</span>
           </div>
         </div>
@@ -896,7 +941,7 @@ const MissionControlCenterView = memo(function MissionControlCenterView() {
                 : 'bg-slate-800/60 border-white/10 text-slate-400 hover:bg-slate-800'
             }`}
           >
-            Base Terrestre
+            {isEn ? 'Surface Base' : 'Base Terrestre'}
           </button>
           <button
             onClick={() => setScene('space')}
@@ -906,13 +951,15 @@ const MissionControlCenterView = memo(function MissionControlCenterView() {
                 : 'bg-slate-800/60 border-white/10 text-slate-400 hover:bg-slate-800'
             }`}
           >
-            Voo Orbital
+            {isEn ? 'Orbital Flight' : 'Voo Orbital'}
           </button>
         </div>
 
         {/* Planetary Selector */}
         <div className="flex flex-col gap-1.5 text-left">
-          <span className="text-[11px] font-bold text-slate-300 uppercase font-mono">Planetas Disponíveis:</span>
+          <span className="text-[11px] font-bold text-slate-300 uppercase font-mono">
+            {isEn ? 'Available Worlds:' : 'Planetas Disponíveis:'}
+          </span>
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 max-h-32 overflow-y-auto">
             {PLANETS.map((p, idx) => (
               <button
@@ -924,7 +971,7 @@ const MissionControlCenterView = memo(function MissionControlCenterView() {
                     : 'bg-slate-800/50 border-white/10 text-slate-300 hover:bg-slate-800'
                 }`}
               >
-                {p.name}
+                {getPlanetName(p.id, p.name, language)}
               </button>
             ))}
           </div>
@@ -939,7 +986,7 @@ const MissionControlCenterView = memo(function MissionControlCenterView() {
           className="w-full py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 active:scale-98 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-500/30 cursor-pointer"
         >
           <RefreshCw className="w-4 h-4" />
-          <span>▶️ Ativar Modo 3D / Tentar Novamente</span>
+          <span>{isEn ? 'Enable 3D Mode / Retry' : 'Ativar Modo 3D / Tentar Novamente'}</span>
         </button>
       </div>
     </div>
@@ -986,6 +1033,8 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
   const planetIndex = useGameStore((state) => state.planetIndex);
   const isOxygenChamberOpen = useGameStore((state) => state.isOxygenChamberOpen);
   const toggleOxygenChamber = useGameStore((state) => state.toggleOxygenChamber);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
 
   return (
     <div className="hidden lg:flex gap-3 justify-end pointer-events-auto">
@@ -996,7 +1045,7 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
             ? 'bg-amber-500/25 hover:bg-amber-500/40 border-amber-400/60 text-amber-300 shadow-lg shadow-amber-500/25'
             : 'bg-white/10 hover:bg-white/20 border-white/20 text-blue-300'
         }`}
-        title={`Viseira: ${visorMode === 'gold' ? 'Solar Ouro 24K (Clique para Transparente)' : 'Óptica Transparente (Clique para Ouro 24K)'} [Tecla V]`}
+        title={`${t.visorLabel}: ${visorMode === 'gold' ? t.goldVisor : t.transparent} [V]`}
       >
         {visorMode === 'gold' ? (
           <Sun className="w-6 h-6 text-amber-400 group-hover:scale-110 transition-transform" />
@@ -1008,7 +1057,7 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
       <button
         onClick={toggleCameraMode}
         className="bg-white/10 hover:bg-white/20 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all backdrop-blur-md border border-white/20 group cursor-pointer"
-        title="Alternar Câmara (1ª / 3ª Pessoa)"
+        title={t.toggleCameraTitle}
       >
         <Camera className="w-6 h-6 group-hover:text-blue-400 transition-colors" />
       </button>
@@ -1017,7 +1066,7 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
         <button
           onClick={() => onAction('collect')}
           className="bg-white/10 hover:bg-white/20 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all backdrop-blur-md border border-white/20 group cursor-pointer"
-          title="Coletar Recursos [Tecla B]"
+          title={t.collectResourcesTitle}
         >
           <Zap className="w-6 h-6 group-hover:text-yellow-400 transition-colors" />
         </button>
@@ -1029,11 +1078,11 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
               ? 'bg-cyan-500/25 hover:bg-cyan-500/40 text-cyan-200 border-cyan-400/70 shadow-lg shadow-cyan-500/25'
               : 'bg-red-950/90 hover:bg-red-900/90 text-red-200 border-red-400 shadow-lg shadow-red-500/45 animate-pulse'
           }`}
-          title={`Câmara de Oxigénio (${isOxygenChamberOpen ? 'Ativa — Clique para Fechar' : 'Fechada — Clique para Abrir'}) [Tecla E]`}
+          title={`${t.o2ChamberLabel} (${isOxygenChamberOpen ? t.closeShort : t.openShort}) [E]`}
         >
           <Wind className={`w-5 h-5 group-hover:scale-110 transition-transform ${isOxygenChamberOpen ? 'text-cyan-300' : 'text-red-300'}`} />
           <span className={`text-[9px] font-mono font-black leading-none mt-0.5 ${isOxygenChamberOpen ? 'text-cyan-200' : 'text-red-200'}`}>
-            {isOxygenChamberOpen ? 'O₂' : 'ABRIR O₂'}
+            {isOxygenChamberOpen ? 'O₂' : t.openO2Short}
           </span>
         </button>
       )}
@@ -1046,7 +1095,7 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
             ? 'bg-emerald-500/35 hover:bg-emerald-500/50 border-emerald-400 text-emerald-200 shadow-lg shadow-emerald-500/25'
             : 'bg-white/10 hover:bg-white/20 border-white/20 text-white'
         }`}
-        title={mobileSprint ? 'Modo Correr Ativo (Clique para Andar) [Shift]' : 'Clique para Correr [Shift]'}
+        title={mobileSprint ? t.runningModeActive : t.clickToRun}
       >
         <Footprints
           className={`w-6 h-6 transition-transform group-hover:scale-110 ${
@@ -1054,7 +1103,7 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
           }`}
         />
         <span className="text-[11px] font-mono font-bold uppercase tracking-wider">
-          {mobileSprint ? 'A Correr' : 'Correr'}
+          {mobileSprint ? t.runningShort : t.runShort}
         </span>
       </button>
     </div>
@@ -1074,6 +1123,8 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
   const setVisorMode = useGameStore((state) => state.setVisorMode);
   const suitStyle = useGameStore((state) => state.suitStyle);
   const setSuitStyle = useGameStore((state) => state.setSuitStyle);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
 
   return (
     <div className="bg-slate-900/95 p-5 rounded-3xl backdrop-blur-2xl border border-blue-500/40 text-white w-full max-w-sm flex flex-col gap-4 shadow-2xl max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95">
@@ -1084,20 +1135,20 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
             <User className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-100">Traje & Personagem</h3>
-            <span className="text-[10px] text-blue-300 font-mono">Astronauta Angolano</span>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-100">{t.suitAndCharacter}</h3>
+            <span className="text-[10px] text-blue-300 font-mono">{t.angolanAstronaut}</span>
           </div>
         </div>
         <button
           onClick={onClose}
           className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95"
-          title="Fechar"
+          title={t.close}
         >
           <X className="w-5 h-5" />
         </button>
       </div>
 
-      {/* GGPEN & Space Apps Luanda Logos */}
+      {/* GGPEN & Cabeça Aberta Logos */}
       <div className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-800/90 border border-blue-500/30">
         <div className="flex items-center gap-2">
           <img src="/ggpen_logo.jpg" alt="GGPEN" className="h-6 w-auto object-contain rounded" />
@@ -1106,17 +1157,17 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
         <div className="h-5 w-[1px] bg-slate-700" />
         <div className="flex items-center gap-2">
           <img
-            src="/nasa_space_apps_luanda.svg"
-            alt="Space Apps Luanda"
-            className="h-6 w-6 object-contain rounded-full shadow-sm"
+            src="/cabeca_aberta_logo.png"
+            alt="Cabeça Aberta"
+            className="h-6 w-auto object-contain rounded shadow-sm"
           />
-          <span className="text-[11px] font-bold text-slate-200">Space Apps Luanda</span>
+          <span className="text-[11px] font-bold text-slate-200">Cabeça Aberta</span>
         </div>
       </div>
 
       {/* Astronaut Gender */}
       <div className="flex flex-col gap-2">
-        <label className="text-xs font-semibold text-slate-300">Astronauta (Comandante / Especialista)</label>
+        <label className="text-xs font-semibold text-slate-300">{t.astronautRoleLabel}</label>
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => setCharacterGender('male')}
@@ -1127,8 +1178,8 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
             }`}
           >
             <span className="text-2xl mb-1">👨</span>
-            <span className="font-bold text-sm">Homem</span>
-            <span className="text-[10px] text-slate-400">Comandante</span>
+            <span className="font-bold text-sm">{t.maleLabel}</span>
+            <span className="text-[10px] text-slate-400">{t.commander}</span>
           </button>
 
           <button
@@ -1140,8 +1191,8 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
             }`}
           >
             <span className="text-2xl mb-1">👩</span>
-            <span className="font-bold text-sm">Mulher</span>
-            <span className="text-[10px] text-slate-400">Especialista</span>
+            <span className="font-bold text-sm">{t.femaleLabel}</span>
+            <span className="text-[10px] text-slate-400">{t.specialist}</span>
           </button>
         </div>
       </div>
@@ -1150,7 +1201,7 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
       <div className="flex flex-col gap-2">
         <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
           <Eye className="w-3.5 h-3.5 text-yellow-400" />
-          Viseira do Capacete
+          {t.helmetVisor}
         </label>
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -1161,8 +1212,8 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
                 : 'bg-slate-800/50 border-white/10 text-slate-400 hover:bg-slate-800'
             }`}
           >
-            <div className="font-bold text-slate-200">Transparente</div>
-            <div className="text-[10px] text-slate-400">Ver rosto humano</div>
+            <div className="font-bold text-slate-200">{t.transparent}</div>
+            <div className="text-[10px] text-slate-400">{t.seeHumanFace}</div>
           </button>
 
           <button
@@ -1173,8 +1224,8 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
                 : 'bg-slate-800/50 border-white/10 text-slate-400 hover:bg-slate-800'
             }`}
           >
-            <div className="font-bold text-slate-200">Solar Ouro 24K</div>
-            <div className="text-[10px] text-slate-400">Reflexo espelhado</div>
+            <div className="font-bold text-slate-200">{t.goldVisor}</div>
+            <div className="text-[10px] text-slate-400">{t.mirroredReflection}</div>
           </button>
         </div>
       </div>
@@ -1183,7 +1234,7 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
       <div className="flex flex-col gap-2">
         <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-          Fato Espacial (Traje)
+          {t.spacesuitStyle}
         </label>
         <div className="grid grid-cols-3 gap-2">
           <button
@@ -1195,7 +1246,7 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
             }`}
           >
             <span className="w-4 h-4 rounded-full bg-slate-100 border border-slate-300 inline-block shadow-sm" />
-            <span className="text-[11px]">EVA Clássico</span>
+            <span className="text-[11px]">{t.evaClassic}</span>
           </button>
 
           <button
@@ -1207,7 +1258,7 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
             }`}
           >
             <span className="w-4 h-4 rounded-full bg-orange-500 border border-orange-300 inline-block shadow-sm" />
-            <span className="text-[11px]">Voo Orion</span>
+            <span className="text-[11px]">{t.orionFlight}</span>
           </button>
 
           <button
@@ -1219,7 +1270,7 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
             }`}
           >
             <span className="w-4 h-4 rounded-full bg-zinc-900 border border-zinc-600 inline-block shadow-sm" />
-            <span className="text-[11px]">Carbono</span>
+            <span className="text-[11px]">{t.carbonSuit}</span>
           </button>
         </div>
       </div>
@@ -1229,7 +1280,7 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
         onClick={onClose}
         className="w-full mt-2 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl text-xs font-bold uppercase tracking-wider transition-all active:scale-98 shadow-lg shadow-blue-500/25 cursor-pointer"
       >
-        Confirmar & Voltar ao Jogo
+        {t.confirmReturnGame}
       </button>
     </div>
   );
@@ -1247,6 +1298,8 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
   const dehydrationSeconds = useGameStore((state) => state.dehydrationSeconds);
   const isOxygenChamberOpen = useGameStore((state) => state.isOxygenChamberOpen);
   const isDying = useGameStore((state) => state.isDying);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
 
   if (scene === 'space' && stagingProgress < 1.0) {
     return null;
@@ -1258,22 +1311,22 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
   const isChamberClosed = scene === 'surface' && planetIndex !== 0 && !isOxygenChamberOpen;
 
   const statusBadge = isDying
-    ? { text: 'MORREU!', cls: 'text-red-100 bg-red-700 border-red-300 animate-pulse' }
+    ? { text: t.diedBadge, cls: 'text-red-100 bg-red-700 border-red-300 animate-pulse' }
     : isChamberClosed
-    ? { text: 'CÂMARA FECHADA!', cls: 'text-red-200 bg-red-950/95 border-red-400 animate-pulse' }
+    ? { text: t.chamberClosedBadge, cls: 'text-red-200 bg-red-950/95 border-red-400 animate-pulse' }
     : activeHazard
     ? activeHazard.type === 'radiation'
-      ? { text: 'RADIAÇÃO!', cls: 'text-lime-300 bg-lime-950/90 border-lime-400/60 animate-pulse' }
-      : { text: 'TÓXICO!', cls: 'text-amber-300 bg-amber-950/90 border-amber-400/60 animate-pulse' }
+      ? { text: t.radiationBadge, cls: 'text-lime-300 bg-lime-950/90 border-lime-400/60 animate-pulse' }
+      : { text: t.toxicBadge, cls: 'text-amber-300 bg-amber-950/90 border-amber-400/60 animate-pulse' }
     : oxygen <= 0 && dehydrationSeconds >= 20
-    ? { text: 'DESIDRATAÇÃO!', cls: 'text-red-200 bg-red-900/95 border-red-400 animate-pulse' }
+    ? { text: t.dehydrationBadge, cls: 'text-red-200 bg-red-900/95 border-red-400 animate-pulse' }
     : oxygen <= 0
-    ? { text: 'HIDRATAR!', cls: 'text-amber-200 bg-amber-900/95 border-amber-400 animate-pulse' }
+    ? { text: t.hydrateBadge, cls: 'text-amber-200 bg-amber-900/95 border-amber-400 animate-pulse' }
     : health < 35 || oxygen < 30
-    ? { text: 'Alerta', cls: 'text-red-300 bg-red-950/90 border-red-400/50 animate-pulse' }
+    ? { text: t.alertBadge, cls: 'text-red-300 bg-red-950/90 border-red-400/50 animate-pulse' }
     : maxHealth > 100
-    ? { text: 'Reforçado', cls: 'text-cyan-300 bg-cyan-950/90 border-cyan-400/40' }
-    : { text: 'Nominal', cls: 'text-emerald-400 bg-emerald-950/80 border-emerald-500/30' };
+    ? { text: t.reinforcedBadge, cls: 'text-cyan-300 bg-cyan-950/90 border-cyan-400/40' }
+    : { text: t.nominalBadge, cls: 'text-emerald-400 bg-emerald-950/80 border-emerald-500/30' };
 
   return (
     <div className="w-full pointer-events-none select-none">
@@ -1286,7 +1339,7 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-1">
           <span className="text-[8px] sm:text-[9px] font-mono font-bold uppercase tracking-wider text-slate-300">
-            Suporte de Vida
+            {t.lifeSupport}
           </span>
           <span className={`text-[8px] font-mono font-bold px-1.5 py-0.2 rounded border ${statusBadge.cls}`}>
             {statusBadge.text}
@@ -1298,7 +1351,7 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
           <div className="flex justify-between items-center text-[9px] sm:text-[10px]">
             <span className="flex items-center gap-1 font-bold text-rose-300">
               <Shield className="w-3 h-3 text-rose-400" />
-              <span>Traje</span>
+              <span>{t.suitLabel}</span>
             </span>
             <span className="font-mono font-bold text-rose-200">
               {Math.max(0, Math.round(health))}/{maxHealth}
@@ -1319,7 +1372,7 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
           <div className="flex justify-between items-center text-[9px] sm:text-[10px]">
             <span className="flex items-center gap-1 font-bold text-cyan-300">
               <Droplets className="w-3 h-3 text-cyan-400" />
-              <span>Água & O₂</span>
+              <span>{t.waterO2Label}</span>
             </span>
             <span className="font-mono font-bold text-cyan-200">
               {Math.max(0, oxygen).toFixed(0)}%
@@ -1335,14 +1388,14 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
 
         {isChamberClosed && (
           <div className="flex items-center justify-between text-[8px] font-mono text-red-200 bg-red-950/90 border border-red-400/70 rounded-lg px-1.5 py-0.5 animate-pulse">
-            <span>Câmara O₂ Fechada</span>
+            <span>{t.chamberO2Closed}</span>
             <span className="font-bold">-10% / 3s</span>
           </div>
         )}
 
         {isSolarProximityDrain && (
           <div className="flex items-center justify-between text-[8px] font-mono text-amber-300 bg-amber-950/60 border border-amber-500/30 rounded-lg px-1.5 py-0.5">
-            <span>Calor Solar Extremo</span>
+            <span>{t.extremeSolarHeat}</span>
             <span className="font-bold">-2% / 3m</span>
           </div>
         )}
@@ -1354,6 +1407,8 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
 const HazardExposureAlert = memo(function HazardExposureAlert() {
   const activeHazard = useGameStore((state) => state.activeHazard);
   const scene = useGameStore((state) => state.scene);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
 
   if (!activeHazard || scene !== 'surface') return null;
 
@@ -1371,10 +1426,10 @@ const HazardExposureAlert = memo(function HazardExposureAlert() {
         <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 animate-bounce" />
         <div className="flex flex-col">
           <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wide text-white">
-            {isRadiation ? 'EXPOSIÇÃO RADIOATIVA' : 'ZONA DE GÁS TÓXICO'} • {activeHazard.name}
+            {isRadiation ? t.radiationExposure : t.toxicGasZone} • {activeHazard.name}
           </span>
           <span className="text-[9px] sm:text-[10px] font-mono opacity-90">
-            Traje e Água/O₂ a diminuir ({activeHazard.distance.toFixed(1)}m) — afaste-se!
+            {t.hazardDrainMsg} ({activeHazard.distance.toFixed(1)}m) — {t.moveAway}
           </span>
         </div>
       </div>
@@ -1393,19 +1448,21 @@ const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
   const isDying = useGameStore((state) => state.isDying);
   const dyingReason = useGameStore((state) => state.dyingReason);
   const scene = useGameStore((state) => state.scene);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
   const [showRespawnToast, setShowRespawnToast] = useState(false);
 
   useEffect(() => {
     if (!lastRespawnAt) return;
     setShowRespawnToast(true);
-    const t = setTimeout(() => setShowRespawnToast(false), 5000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setShowRespawnToast(false), 5000);
+    return () => clearTimeout(timer);
   }, [lastRespawnAt]);
 
   useEffect(() => {
     if (!launchFailureMsg) return;
-    const t = setTimeout(() => setLaunchFailureMsg(null), 4500);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setLaunchFailureMsg(null), 4500);
+    return () => clearTimeout(timer);
   }, [launchFailureMsg, setLaunchFailureMsg]);
 
   if (scene !== 'surface') return null;
@@ -1415,7 +1472,8 @@ const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
 
   const remainingGrace = Math.max(1, Math.ceil(20 - dehydrationSeconds));
   const drainingSuit = dehydrationSeconds >= 20;
-  const planetName = (PLANETS[planetIndex] || PLANETS[0]).name;
+  const rawPlanet = PLANETS[planetIndex] || PLANETS[0];
+  const planetName = getPlanetName(rawPlanet.id, rawPlanet.name, language);
   const isDangerToast = lastRespawnReason === 'rocket_crash' || lastRespawnReason === 'oxygen_chamber';
 
   return (
@@ -1425,12 +1483,12 @@ const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
           <AlertTriangle className="w-5 h-5 text-red-300 shrink-0" />
           <div className="flex flex-col">
             <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
-              O ASTRONAUTA MORREU!
+              {t.astronautDied}
             </span>
             <span className="text-[10px] sm:text-xs font-mono text-red-200">
               {dyingReason === 'oxygen_chamber'
-                ? `Câmara de Oxigénio fechada — proteção esgotada! A renascer em ${planetName}...`
-                : 'Proteção do traje chegou a 0 — a renascer...'}
+                ? `${t.chamberDepletedRespawn} ${planetName}...`
+                : t.suitZeroRespawn}
             </span>
           </div>
         </div>
@@ -1454,12 +1512,12 @@ const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
           <CheckCircle2 className={`w-4 h-4 shrink-0 ${isDangerToast ? 'text-red-400' : 'text-cyan-400'}`} />
           <span className="text-[10px] sm:text-xs font-bold">
             {lastRespawnReason === 'rocket_crash'
-              ? 'Foguete caiu no mar por falta de combustível — o astronauta morreu e reiniciou no Hangar!'
+              ? t.crashToastMsg
               : lastRespawnReason === 'oxygen_chamber'
-              ? `Câmara de Oxigénio fechada em ${planetName} — o astronauta morreu e renasceu nesta posição!`
+              ? `${t.chamberDeathToastPrefix}${planetName}${t.chamberDeathToastSuffix}`
               : planetIndex !== 0
-              ? `Proteção do traje chegou a 0 — renasceu na sua posição em ${planetName}!`
-              : 'Proteção do traje chegou a 0 — renasceu no Hangar com Suporte de Vida restaurado!'}
+              ? `${t.offEarthRespawnPrefix}${planetName}!`
+              : t.earthRespawnToast}
           </span>
         </div>
       )}
@@ -1475,14 +1533,12 @@ const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
           <Droplets className="w-4 h-4 shrink-0 text-cyan-300 animate-pulse" />
           <div className="flex flex-col">
             <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wide text-white">
-              {drainingSuit
-                ? 'DESIDRATAÇÃO CRÍTICA — TRAJE A PERDER PROTEÇÃO!'
-                : 'ÁGUA & O₂ ESGOTADA — HIDRATE-SE!'}
+              {drainingSuit ? t.criticalDehydrationTitle : t.waterO2DepletedTitle}
             </span>
             <span className="text-[9px] sm:text-[10px] font-mono opacity-95">
               {drainingSuit
-                ? 'Use água/suprimentos na Mochila [I] imediatamente antes que a proteção zere!'
-                : `Beba água ou colete oxigénio — desconto na proteção do traje em ${remainingGrace}s`}
+                ? t.criticalDehydrationDesc
+                : `${t.waterO2DepletedDescPrefix}${remainingGrace}s`}
             </span>
           </div>
         </div>
@@ -1498,6 +1554,11 @@ interface SettingsModalProps {
 const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProps) {
   const targetFps = useGameStore((state) => state.targetFps);
   const setTargetFps = useGameStore((state) => state.setTargetFps);
+  const language = useGameStore((state) => state.language);
+  const setLanguage = useGameStore((state) => state.setLanguage);
+  const gameMusicTrack = useGameStore((state) => state.gameMusicTrack);
+  const setGameMusicTrack = useGameStore((state) => state.setGameMusicTrack);
+  const t = UI_TEXT[language];
 
   return (
     <div className="bg-slate-900/95 p-5 rounded-3xl backdrop-blur-2xl border border-cyan-500/40 text-white w-full max-w-sm flex flex-col gap-4 shadow-2xl max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95">
@@ -1508,31 +1569,59 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
             <Gauge className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-100">Definições & Desempenho</h3>
-            <span className="text-[10px] text-cyan-300 font-mono">Modo Otimizado Mobile</span>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-100">{t.settingsTitle}</h3>
+            <span className="text-[10px] text-cyan-300 font-mono">{t.mobileOptimizedMode}</span>
           </div>
         </div>
         <button
           onClick={onClose}
           className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95"
-          title="Fechar"
+          title={t.close}
         >
           <X className="w-5 h-5" />
         </button>
       </div>
 
+      {/* Language Selector (Português / English) */}
+      <div className="flex items-center justify-between bg-slate-800/70 border border-white/10 rounded-2xl p-2.5">
+        <span className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+          <Languages className="w-4 h-4 text-cyan-400" />
+          <span>{t.languageLabel}</span>
+        </span>
+        <div className="flex items-center gap-1 bg-slate-950/80 border border-white/10 rounded-xl p-0.5">
+          <button
+            type="button"
+            onClick={() => setLanguage('pt')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              language === 'pt' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Português
+          </button>
+          <button
+            type="button"
+            onClick={() => setLanguage('en')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              language === 'en' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            English
+          </button>
+        </div>
+      </div>
+
       {/* Frame Rate Selection (Strictly 20, 30, 40, and 60 FPS - Máx Hidden) */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-200">Taxa de Quadros (FPS)</span>
+          <span className="text-xs font-semibold text-slate-200">{t.frameRateLabel}</span>
           <span className="text-[10px] text-cyan-400 font-mono font-bold bg-cyan-950/80 px-2 py-0.5 rounded-lg border border-cyan-500/30">
             {targetFps === 20
-              ? '20 FPS Bateria Máx'
+              ? t.fps20
               : targetFps === 30
-              ? '30 FPS Econômico'
+              ? t.fps30
               : targetFps === 40
-              ? '40 FPS Equilibrado'
-              : '60 FPS Fluido'}
+              ? t.fps40
+              : t.fps60}
           </span>
         </div>
 
@@ -1546,7 +1635,7 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
             }`}
           >
             <span className="text-xs font-bold">20 FPS</span>
-            <span className="text-[9px] text-rose-300 font-medium">Bateria Máx</span>
+            <span className="text-[9px] text-rose-300 font-medium">{t.maxBattery}</span>
           </button>
 
           <button
@@ -1558,7 +1647,7 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
             }`}
           >
             <span className="text-xs font-bold">30 FPS</span>
-            <span className="text-[9px] text-amber-300 font-medium">Econômico</span>
+            <span className="text-[9px] text-amber-300 font-medium">{t.economical}</span>
           </button>
 
           <button
@@ -1570,7 +1659,7 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
             }`}
           >
             <span className="text-xs font-bold">40 FPS</span>
-            <span className="text-[9px] text-cyan-300 font-medium">Equilibrado</span>
+            <span className="text-[9px] text-cyan-300 font-medium">{t.balanced}</span>
           </button>
 
           <button
@@ -1582,33 +1671,92 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
             }`}
           >
             <span className="text-xs font-bold">60 FPS</span>
-            <span className="text-[9px] text-emerald-300 font-medium">Fluido</span>
+            <span className="text-[9px] text-emerald-300 font-medium">{t.smooth}</span>
           </button>
         </div>
 
         <p className="text-[10px] text-slate-400 leading-tight mt-1">
-          20 e 30 FPS economizam o máximo de bateria em telemóveis modestos; 40 FPS oferece equilíbrio térmico ideal; 60 FPS proporciona máxima fluidez visual.
+          {t.fpsHelpText}
         </p>
       </div>
 
-      {/* Dismiss Button */}
-      <button
-        onClick={onClose}
-        className="w-full mt-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-2xl text-xs font-bold uppercase tracking-wider transition-all active:scale-98 cursor-pointer"
-      >
-        Fechar Definições
-      </button>
+      {/* In-Game Music Selector (4 options: Epic, Orbital, Tactical, No Music) */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
+            <Music className="w-3.5 h-3.5 text-cyan-400" />
+            <span>{t.musicLabel}</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              { id: 'epic', label: t.musicTrackEpic, sub: t.musicTrackEpicSub, activeClass: 'bg-cyan-600/35 border-cyan-400 text-white shadow-md shadow-cyan-500/20' },
+              { id: 'orbital', label: t.musicTrackOrbital, sub: t.musicTrackOrbitalSub, activeClass: 'bg-indigo-600/35 border-indigo-400 text-white shadow-md shadow-indigo-500/20' },
+              { id: 'tactical', label: t.musicTrackTactical, sub: t.musicTrackTacticalSub, activeClass: 'bg-amber-600/35 border-amber-400 text-white shadow-md shadow-amber-500/20' },
+              { id: 'none', label: t.musicTrackNone, sub: t.musicTrackNoneSub, activeClass: 'bg-rose-600/35 border-rose-400 text-white shadow-md shadow-rose-500/20' },
+            ] as const
+          ).map((opt) => {
+            const isSelected = gameMusicTrack === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  initAudio();
+                  setGameMusicTrack(opt.id as GameMusicTrack);
+                }}
+                className={`p-2.5 rounded-2xl border text-left transition-all flex flex-col gap-0.5 cursor-pointer ${
+                  isSelected
+                    ? `${opt.activeClass} font-bold`
+                    : 'bg-slate-800/60 border-white/10 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <span className="text-xs font-bold flex items-center gap-1.5 leading-tight">
+                  {opt.id === 'none' ? (
+                    <VolumeX className="w-3.5 h-3.5 shrink-0 text-rose-300" />
+                  ) : (
+                    <Music className="w-3.5 h-3.5 shrink-0 text-cyan-300" />
+                  )}
+                  <span className="truncate">{opt.label}</span>
+                </span>
+                <span className="text-[9px] text-slate-400 font-medium pl-5 truncate">{opt.sub}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Return to Mode Menu & Dismiss Buttons */}
+      <div className="flex flex-col gap-2 mt-1">
+        <button
+          onClick={() => {
+            stopMissionVoice();
+            onClose();
+            useGameStore.getState().returnToModeSelect();
+          }}
+          className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 hover:text-white rounded-2xl text-xs font-bold uppercase tracking-wider transition-all active:scale-98 cursor-pointer"
+        >
+          {t.returnToMainMenu}
+        </button>
+
+        <button
+          onClick={onClose}
+          className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-2xl text-xs font-bold uppercase tracking-wider transition-all active:scale-98 cursor-pointer"
+        >
+          {t.closeSettings}
+        </button>
+      </div>
     </div>
   );
 });
 
 const WaterImmersionAlert = memo(function WaterImmersionAlert() {
-  // User requested in item 5: "Oculta as indicações de modo natação ou quando está abrir e a fechar o portão."
   return null;
 });
 
 const VABDoorAlert = memo(function VABDoorAlert() {
-  // User requested in item 5: "Oculta as indicações de modo natação ou quando está abrir e a fechar o portão."
   return null;
 });
 
@@ -1616,51 +1764,53 @@ const DesktopControlsGuide = memo(function DesktopControlsGuide() {
   const scene = useGameStore((state) => state.scene);
   const planetIndex = useGameStore((state) => state.planetIndex);
   const drivingCarId = useGameStore((state) => state.drivingCarId);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
 
   return (
     <div className="absolute bottom-6 left-24 hidden lg:flex flex-col gap-1 pointer-events-none text-white/60 font-mono text-xs uppercase tracking-widest bg-black/45 p-3.5 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg">
       {scene === 'surface' ? (
         drivingCarId ? (
           <>
-            <p className="text-cyan-400 font-bold">MODO CONDUÇÃO ATIVO</p>
+            <p className="text-cyan-400 font-bold">{t.drivingModeActive}</p>
             <p>
-              <strong className="text-white/90">W A S D / SETAS</strong> Acelerar / Virar
+              <strong className="text-white/90">W A S D / ARROWS</strong> {t.accelTurn}
             </p>
             <p>
-              <strong className="text-white/90">SHIFT</strong> Turbo • <strong className="text-white/90">SPACE</strong> Travão
+              <strong className="text-white/90">SHIFT</strong> {t.turboBrake}
             </p>
             <p>
-              <strong className="text-white/90">R</strong> Sair do Veículo
+              <strong className="text-white/90">R</strong> {t.exitVehicle}
             </p>
           </>
         ) : (
           <>
             <p>
-              <strong className="text-white/90">W A S D</strong> Andar • <strong className="text-white/90">SHIFT</strong> Correr
+              <strong className="text-white/90">W A S D</strong> {t.walkRun}
             </p>
             <p>
-              <strong className="text-white/90">SPACE</strong> Saltar / Nadar
+              <strong className="text-white/90">SPACE</strong> {t.jumpSwim}
             </p>
             <p>
-              <strong className="text-white/90">R</strong> Subir no Carro / Foguete
+              <strong className="text-white/90">R</strong> {t.boardCarRocket}
             </p>
             <p>
-              <strong className="text-white/90">B</strong> Coletar / Recarregar • <strong className="text-white/90">E</strong> {planetIndex === 0 ? 'Portão' : 'Câmara O₂'}
+              <strong className="text-white/90">B</strong> {t.collectRecharge} • <strong className="text-white/90">E</strong> {planetIndex === 0 ? t.doorLabel : t.o2ChamberLabel}
             </p>
             <p>
-              <strong className="text-white/90">I</strong> Mochila • <strong className="text-white/90">V</strong> Viseira
+              <strong className="text-white/90">I</strong> {t.backpackLabel} • <strong className="text-white/90">V</strong> {t.visorLabel}
             </p>
           </>
         )
       ) : (
         <>
           <p>
-            <strong className="text-white/80">W A S D</strong> Guiar Nave
+            <strong className="text-white/80">W A S D</strong> {t.steerShip}
           </p>
           <p>
-            <strong className="text-white/80">SPACE</strong> Acelerar
+            <strong className="text-white/80">SPACE</strong> {t.accelerateShip}
           </p>
-          <p className="text-yellow-400/80 mt-1">Aproxime-se de um planeta para pousar</p>
+          <p className="text-yellow-400/80 mt-1">{t.approachPlanetToLand}</p>
         </>
       )}
     </div>
@@ -1684,6 +1834,8 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
   const toggleCameraMode = useGameStore((state) => state.toggleCameraMode);
   const cameraMode = useGameStore((state) => state.cameraMode);
   const carStates = useGameStore((state) => state.carStates);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
 
   const [isRefueling, setIsRefueling] = useState(false);
 
@@ -1743,10 +1895,16 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
 
   const handleBoardRocket = () => {
     if (!isLaunching && isNearRocket) {
+      const st = useGameStore.getState();
+      const lt = UI_TEXT[st.language];
       if (planetIndex === 0) {
-        const currentFuel = useGameStore.getState().rocketFuel;
+        if (st.gameMode === 'story' && !st.hasSpacesuit) {
+          setLaunchFailureMsg(lt.needSuitBeforeRocket);
+          return;
+        }
+        const currentFuel = st.rocketFuel;
         if (currentFuel <= 0) {
-          setLaunchFailureMsg('Sem combustível (0%)! Pressione e segure "Abastecer Foguete" antes de descolar.');
+          setLaunchFailureMsg(lt.noFuelHoldPanel);
           return;
         }
         setLaunchFailureMsg(null);
@@ -1769,7 +1927,7 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
   return (
     <div className="w-full pointer-events-auto flex flex-col items-stretch gap-1.5 animate-in fade-in duration-200">
       {drivingCarId && activeCar ? (
-        /* Compact Top-Right Speedometer & Cockpit HUD placed directly below Suporte de Vida */
+        /* Compact Top-Right Speedometer & Cockpit HUD placed directly below Life Support */
         <div className="w-full flex flex-col gap-1.5 bg-slate-950/92 backdrop-blur-xl border border-cyan-400/75 p-2 sm:p-2.5 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.3)] text-white">
           <div className="flex items-center justify-between gap-2">
             <div className="flex flex-col flex-1 min-w-0">
@@ -1802,9 +1960,9 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
             <button
               onClick={() => toggleCameraMode()}
               className="flex-1 py-1 px-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-cyan-200 border border-cyan-400/30 font-mono text-[9px] sm:text-[10px] font-bold uppercase tracking-wider cursor-pointer"
-              title="Alternar Câmara Interior (Volante) / Exterior"
+              title={t.toggleCameraTitle}
             >
-              {cameraMode === 'first' ? '3ª Pessoa' : '1ª Pessoa'}
+              {cameraMode === 'first' ? t.thirdPerson : t.firstPerson}
             </button>
 
             {/* Exit Vehicle Button [R] */}
@@ -1812,7 +1970,7 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
               onClick={() => toggleDriveCar()}
               className="py-1 px-2 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-mono text-[9px] sm:text-[10px] font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center gap-1 shrink-0"
             >
-              <span>Sair</span>
+              <span>{t.exitBtn}</span>
               <span className="px-1 py-0.2 rounded bg-black/40 text-[8px] border border-white/25">R</span>
             </button>
           </div>
@@ -1827,7 +1985,7 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
               {activeCar.name}
             </span>
             <span className="text-[10px] sm:text-xs font-extrabold tracking-wide text-white group-hover:text-emerald-200 leading-tight">
-              Entrar no Carro
+              {t.enterCar}
             </span>
           </div>
           <span className="px-1.5 py-0.5 rounded-md bg-emerald-500 text-slate-950 font-mono text-[10px] font-black shadow-sm shrink-0">
@@ -1843,7 +2001,7 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
               <div className="flex items-center justify-between border-b border-white/10 pb-1">
                 <span className="flex items-center gap-1 text-[8px] sm:text-[9px] font-mono font-bold uppercase text-amber-300">
                   <Fuel className="w-3 h-3 text-amber-400" />
-                  <span>Painel Abastecimento</span>
+                  <span>{t.refuelPanel}</span>
                 </span>
                 <span
                   className={`text-[9px] sm:text-[10px] font-mono font-black ${
@@ -1874,17 +2032,17 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
                 <div
                   className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_6px_#ffffff]"
                   style={{ left: '85%' }}
-                  title="Mínimo seguro para órbita: 85%"
+                  title={t.safeOrbitMinTitle}
                 />
               </div>
 
               <div className="flex items-center justify-between text-[8px] sm:text-[9px] font-mono text-slate-300">
                 <span className="flex items-center gap-1">
                   <Scale className="w-2.5 h-2.5 text-cyan-400" />
-                  <span>Peso: {rocketWeightTons.toLocaleString('pt-PT')} t</span>
+                  <span>{t.weightShort}: {rocketWeightTons.toLocaleString(language === 'en' ? 'en-US' : 'pt-PT')} t</span>
                 </span>
                 <span className={rocketFuelPct >= 85 ? 'text-emerald-400 font-bold' : rocketFuelPct > 0 ? 'text-amber-300 font-bold' : 'text-red-400 font-bold'}>
-                  {rocketFuelPct >= 85 ? 'Órbita Segura' : rocketFuelPct > 0 ? 'Queda <85%' : 'Vazio'}
+                  {rocketFuelPct >= 85 ? t.safeOrbit : rocketFuelPct > 0 ? t.fallUnder85 : t.empty}
                 </span>
               </div>
 
@@ -1909,10 +2067,10 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
                 <Fuel className={`w-3.5 h-3.5 ${isRefueling ? 'animate-bounce' : ''}`} />
                 <span>
                   {rocketFuelPct >= 100
-                    ? 'Tanque Cheio (100%)'
+                    ? t.tankFull
                     : isRefueling
-                    ? 'A Abastecer...'
-                    : 'Segurar p/ Abastecer'}
+                    ? t.refueling
+                    : t.holdToRefuel}
                 </span>
               </button>
             </div>
@@ -1928,10 +2086,10 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
           >
             <div className="flex flex-col text-left min-w-0">
               <span className="text-[8px] font-mono uppercase tracking-wider text-amber-400 font-bold leading-tight truncate">
-                {planetIndex === 0 ? 'Foguete Pad 39A' : 'Cápsula'}
+                {planetIndex === 0 ? t.rocketPadName : t.capsuleName}
               </span>
               <span className="text-[10px] sm:text-xs font-extrabold tracking-wide text-white group-hover:text-amber-200 leading-tight">
-                Subir no Foguete
+                {t.boardRocket}
               </span>
             </div>
             <span className="px-1.5 py-0.5 rounded-md bg-amber-400 text-slate-950 font-mono text-[10px] font-black shadow-sm shrink-0">
@@ -1950,6 +2108,8 @@ const TopRightComputerLibraryButton = memo(function TopRightComputerLibraryButto
   const isComputerLibraryOpen = useGameStore((s) => s.isComputerLibraryOpen);
   const setComputerLibraryOpen = useGameStore((s) => s.setComputerLibraryOpen);
   const drivingCarId = useGameStore((s) => s.drivingCarId);
+  const language = useGameStore((s) => s.language);
+  const t = UI_TEXT[language];
 
   if (scene !== 'surface' || !isNearComputer || isComputerLibraryOpen || drivingCarId) return null;
 
@@ -1962,10 +2122,10 @@ const TopRightComputerLibraryButton = memo(function TopRightComputerLibraryButto
         <BookOpen className="w-4 h-4 text-cyan-300 shrink-0" />
         <div className="flex flex-col text-left min-w-0">
           <span className="text-[8px] font-mono uppercase tracking-wider text-cyan-300 font-bold leading-tight truncate">
-            Biblioteca Digital
+            {t.digitalLibrary}
           </span>
           <span className="text-[10px] sm:text-xs font-extrabold tracking-wide text-white group-hover:text-cyan-200 leading-tight truncate">
-            Abrir Biblioteca
+            {t.openLibrary}
           </span>
         </div>
       </div>
@@ -1986,6 +2146,7 @@ const TopRightHUDStack = memo(function TopRightHUDStack() {
       }`}
     >
       <AstronautLifeSupportHUD />
+      <StoryTopRightActionButtons />
       <VehicleDriveHUD />
       <TopRightComputerLibraryButton />
       <EarthLaunchHUD />
@@ -2012,14 +2173,21 @@ export function Game() {
   const setVisorMode = useGameStore((state) => state.setVisorMode);
   const suitStyle = useGameStore((state) => state.suitStyle);
   const setSuitStyle = useGameStore((state) => state.setSuitStyle);
+  const language = useGameStore((state) => state.language);
+  const setLanguage = useGameStore((state) => state.setLanguage);
+  const gameMusicTrack = useGameStore((state) => state.gameMusicTrack);
+  const setGameMusicTrack = useGameStore((state) => state.setGameMusicTrack);
   const toggleHabitatDoor = useGameStore((state) => state.toggleHabitatDoor);
 
+  const appStage = useGameStore((state) => state.appStage);
   const scene = useGameStore((state) => state.scene);
   const planetIndex = useGameStore((state) => state.planetIndex);
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
   const gravity = useGameStore((state) => state.gravity);
   const health = useGameStore((state) => state.health);
   const oxygen = useGameStore((state) => state.oxygen);
+
+  const t = UI_TEXT[language];
 
   const [dbState, setDbState] = useState<{ isReady: boolean; storageType: string; lastSaved: string | null }>({
     isReady: false,
@@ -2032,7 +2200,7 @@ export function Game() {
     setTimeout(() => setActionRequested(null), 100);
   }, []);
 
-  // Initialize and hydrate state from client-side IndexedDB database
+  // Initialize and hydrate state from client-side IndexedDB database (Keep 20 FPS default on startup)
   useEffect(() => {
     initGameDatabase().then(async () => {
       const status = getDatabaseStatus();
@@ -2042,10 +2210,18 @@ export function Game() {
         if (saved.suitStyle) setSuitStyle(saved.suitStyle as 'white' | 'orange' | 'carbon');
         if (saved.characterGender) setCharacterGender(saved.characterGender as 'male' | 'female');
         if (saved.visorMode) setVisorMode(saved.visorMode as 'transparent' | 'gold');
-        if (saved.targetFps) setTargetFps(saved.targetFps as 20 | 30 | 40 | 60);
+        if (saved.language === 'pt' || saved.language === 'en') setLanguage(saved.language);
+        if (
+          saved.gameMusicTrack === 'epic' ||
+          saved.gameMusicTrack === 'orbital' ||
+          saved.gameMusicTrack === 'tactical' ||
+          saved.gameMusicTrack === 'none'
+        ) {
+          setGameMusicTrack(saved.gameMusicTrack);
+        }
       }
     });
-  }, [setSuitStyle, setCharacterGender, setVisorMode, setTargetFps]);
+  }, [setSuitStyle, setCharacterGender, setVisorMode, setLanguage, setGameMusicTrack]);
 
   // Auto-save changes to client-side database quietly in background
   useEffect(() => {
@@ -2055,10 +2231,12 @@ export function Game() {
       visorMode,
       targetFps,
       planetIndex,
+      language,
+      gameMusicTrack,
     }).then(() => {
       setDbState(getDatabaseStatus());
     });
-  }, [suitStyle, characterGender, visorMode, targetFps, planetIndex]);
+  }, [suitStyle, characterGender, visorMode, targetFps, planetIndex, language, gameMusicTrack]);
 
   const handleManualSave = useCallback(async () => {
     await saveGameStateToDB({
@@ -2067,21 +2245,39 @@ export function Game() {
       visorMode,
       targetFps,
       planetIndex,
+      language,
+      gameMusicTrack,
       health,
       oxygen,
     });
     setDbState(getDatabaseStatus());
-  }, [suitStyle, characterGender, visorMode, targetFps, planetIndex, health, oxygen]);
+  }, [suitStyle, characterGender, visorMode, targetFps, planetIndex, language, gameMusicTrack, health, oxygen]);
 
   useEffect(() => {
+    if (appStage !== 'playing') return;
     const isHostile = currentPlanet.type === 'mars' || currentPlanet.type === 'venus' || currentPlanet.type === 'exoplanet';
     updateAudio(isHostile, gravity);
-  }, [planetIndex, gravity, currentPlanet.type]);
+  }, [appStage, planetIndex, gravity, currentPlanet.type]);
 
-  // Switch between Earth ocean/machinery, alien planet, and deep-space audio soundscapes
+  // Silence all ocean, machinery, and ambient audio until playing stage starts (after video finishes or skips)
   useEffect(() => {
+    if (appStage !== 'playing') {
+      setAudioEnvironment('silent', 0);
+      return;
+    }
     setAudioEnvironment(scene, planetIndex);
-  }, [scene, planetIndex]);
+  }, [appStage, scene, planetIndex]);
+
+  // Switch between Menu Suspense Music, Story Video Silence, and In-Game Selected Music
+  useEffect(() => {
+    if (appStage === 'mode_select') {
+      setMusicMode('menu_suspense');
+    } else if (appStage === 'story_video') {
+      setMusicMode('silent');
+    } else {
+      setMusicMode(gameMusicTrack === 'none' ? 'silent' : gameMusicTrack);
+    }
+  }, [appStage, gameMusicTrack]);
 
   // Auto-dismiss item pickup toast
   useEffect(() => {
@@ -2102,12 +2298,17 @@ export function Game() {
       // Key R: Enter/Exit Car OR Board Rocket when close to it!
       if (e.key === 'r' || e.key === 'R') {
         const state = useGameStore.getState();
+        const lt = UI_TEXT[state.language];
         if (state.drivingCarId || state.nearCarId) {
           state.toggleDriveCar();
         } else if (state.isNearRocket && !state.isLaunching) {
           if (state.planetIndex === 0) {
+            if (state.gameMode === 'story' && !state.hasSpacesuit) {
+              state.setLaunchFailureMsg(lt.needSuitBeforeRocket);
+              return;
+            }
             if (state.rocketFuel <= 0) {
-              state.setLaunchFailureMsg('Foguete sem combustível (0%)! Segure "Abastecer Foguete" no painel antes de lançar.');
+              state.setLaunchFailureMsg(lt.noFuelHoldPanel);
               return;
             }
             const f = state.rocketFuel;
@@ -2155,6 +2356,14 @@ export function Game() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleHabitatDoor, handleAction]);
 
+  if (appStage === 'mode_select') {
+    return <ModeSelectionScreen />;
+  }
+
+  if (appStage === 'story_video') {
+    return <StoryVideoPlayerScreen />;
+  }
+
   return (
     <div className="w-full h-screen relative bg-[#050505] overflow-hidden select-none" onClick={() => initAudio()}>
       {/* 3D Canvas completely isolated from 2D HUD state updates */}
@@ -2163,6 +2372,7 @@ export function Game() {
       {/* 2D HUD overlays */}
       <CrosshairOverlay />
       <HUDHeader />
+      <StoryMissionHUD />
       <SpaceFlightHUD />
       <HazardExposureAlert />
       <LifeSupportCriticalAlert />
@@ -2186,10 +2396,10 @@ export function Game() {
               ? 'bg-blue-600/80 border-blue-400 text-white shadow-lg shadow-blue-500/25'
               : 'bg-black/50 hover:bg-black/70 border-white/10 text-white'
           }`}
-          title="Personalizar Astronauta"
+          title={t.astronautBtnTitle}
         >
           <User className="w-5 h-5 text-blue-400" />
-          <span className="hidden sm:inline">Astronauta</span>
+          <span className="hidden sm:inline">{t.astronautBtn}</span>
         </button>
 
         <button
@@ -2202,7 +2412,7 @@ export function Game() {
               ? 'bg-cyan-600/80 border-cyan-400 text-white shadow-lg shadow-cyan-500/25'
               : 'bg-black/50 hover:bg-black/70 border-white/10 text-white'
           }`}
-          title="Definições e FPS"
+          title={t.settingsBtnTitle}
         >
           <Settings className="w-5 h-5 text-slate-200" />
           <span className="text-[11px] font-mono text-cyan-300 font-bold hidden sm:inline">
@@ -2258,7 +2468,7 @@ export function Game() {
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400 font-bold">
-                Recurso Coletado no Planeta
+                {t.resourceCollected}
               </span>
               <span className="text-xs font-bold text-slate-100">
                 +{recentCollectedItem.amount} {recentCollectedItem.name}
@@ -2275,7 +2485,7 @@ export function Game() {
       {/* Desktop Controls Guide */}
       <DesktopControlsGuide />
 
-      {/* Free Fire Style Tactical Survival Backpack Button (Above Left Joystick / Driving Pad on Mobile, Bottom-Left on PC) */}
+      {/* Tactical Survival Backpack Button (Above Left Joystick / Driving Pad on Mobile, Bottom-Left on PC) */}
       <div className="absolute bottom-[226px] left-5 sm:bottom-[246px] sm:left-9 lg:bottom-6 lg:left-6 z-30 pointer-events-auto select-none">
         <button
           onClick={() => {
@@ -2288,7 +2498,7 @@ export function Game() {
               ? 'bg-amber-500/90 border-amber-300 text-slate-950 shadow-amber-500/40 ring-2 ring-amber-400'
               : 'bg-slate-900/85 hover:bg-slate-800/90 border-amber-400/50 hover:border-amber-400 text-amber-400 shadow-black/60'
           }`}
-          title="Mochila de Sobrevivência (Inventário)"
+          title={t.survivalBackpack}
         >
           <Briefcase className={`w-6 h-6 transition-transform group-hover:scale-110 ${showInventory ? 'text-slate-950' : 'text-amber-400'}`} />
           
@@ -2301,7 +2511,7 @@ export function Game() {
           
           {/* Quick Tactical Tooltip on Desktop */}
           <span className="absolute left-full ml-3 px-2.5 py-1 rounded-xl bg-slate-900/90 border border-white/10 text-[10px] font-mono text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none hidden sm:inline-block">
-            Mochila [I]
+            {t.backpackTooltip}
           </span>
         </button>
       </div>

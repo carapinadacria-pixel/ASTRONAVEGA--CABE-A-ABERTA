@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useGameStore, PLANETS } from '../store';
+import { UI_TEXT } from '../utils/i18n';
 import {
   RESOURCE_DEFINITIONS,
   NASA_PLANETARY_DATA,
@@ -25,6 +26,8 @@ interface InventoryModalProps {
 }
 
 export const InventoryModal = React.memo(function InventoryModal({ onClose }: InventoryModalProps) {
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
   const inventory = useGameStore((state) => state.inventory);
   const planetIndex = useGameStore((state) => state.planetIndex);
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
@@ -104,21 +107,21 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-100">
-                Mochila de Sobrevivência
+                {t.survivalBackpack}
               </h3>
               <span className="text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-md border border-blue-400/30">
                 EVA GGPEN
               </span>
             </div>
             <span className="text-[10px] text-slate-400 font-mono">
-              Armazenamento Tático & Amostras de Campo
+              {t.fieldStorageSub}
             </span>
           </div>
         </div>
         <button
           onClick={onClose}
           className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95"
-          title="Fechar"
+          title={t.close}
         >
           <X className="w-5 h-5" />
         </button>
@@ -130,7 +133,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           <div className="flex justify-between text-[11px]">
             <span className="text-slate-400 flex items-center gap-1 font-medium">
               <Scale className="w-3.5 h-3.5 text-blue-400" />
-              Carga Total:
+              {t.totalLoad}
             </span>
             <span className="font-mono font-bold text-slate-200">
               {totalWeight.toFixed(1)} / 40.0 kg
@@ -148,7 +151,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           <div className="flex justify-between text-[11px]">
             <span className="text-slate-400 flex items-center gap-1 font-medium">
               <Layers className="w-3.5 h-3.5 text-amber-400" />
-              Slots Ocupados:
+              {t.occupiedSlots}
             </span>
             <span className="font-mono font-bold text-slate-200">
               {occupiedSlots} / 20 Slots
@@ -173,7 +176,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
               : 'bg-slate-800/60 text-slate-400 hover:text-white'
           }`}
         >
-          Todos ({itemsList.length})
+          {t.allTab} ({itemsList.length})
         </button>
         <button
           onClick={() => setActiveCategory('minerals')}
@@ -184,7 +187,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           }`}
         >
           <Sparkles className="w-3 h-3 text-cyan-400" />
-          Minerais
+          {t.mineralsTab}
         </button>
         <button
           onClick={() => setActiveCategory('chemicals')}
@@ -195,7 +198,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           }`}
         >
           <Droplets className="w-3 h-3 text-blue-400" />
-          Químicos
+          {t.chemicalsTab}
         </button>
         <button
           onClick={() => setActiveCategory('tech')}
@@ -206,7 +209,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           }`}
         >
           <Cpu className="w-3 h-3 text-purple-400" />
-          Aeroespacial
+          {t.techTab}
         </button>
         <button
           onClick={() => setActiveCategory('telemetry')}
@@ -217,7 +220,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           }`}
         >
           <Compass className="w-3 h-3 text-amber-400" />
-          NASA Dados
+          {t.nasaDataTab}
         </button>
       </div>
 
@@ -228,7 +231,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           <div className="flex flex-col gap-2.5 p-3.5 rounded-2xl bg-blue-950/40 border border-blue-400/30 text-xs">
             <div className="flex items-center justify-between border-b border-blue-400/20 pb-2">
               <span className="font-bold text-sm text-blue-300 uppercase tracking-wide">
-                Ficha Científica • {planetaryTelemetry.namePt} ({planetaryTelemetry.name})
+                {t.sciSheetTitle} • {language === 'en' ? planetaryTelemetry.name : `${planetaryTelemetry.namePt} (${planetaryTelemetry.name})`}
               </span>
               <span className="text-[10px] font-mono text-cyan-300 font-bold bg-blue-900/60 px-2 py-0.5 rounded">
                 NASA Fact Sheet
@@ -239,32 +242,32 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
             </p>
             <div className="grid grid-cols-2 gap-2 mt-1 font-mono text-[11px]">
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">
-                <span className="text-[10px] text-slate-400 block">Gravidade Superficial:</span>
+                <span className="text-[10px] text-slate-400 block">{t.gravitySurfaceLabel}</span>
                 <span className="text-sm font-bold text-cyan-300">
                   {planetaryTelemetry.gravity} m/s² ({planetaryTelemetry.gravityG} G)
                 </span>
               </div>
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">
-                <span className="text-[10px] text-slate-400 block">Humidade / Vapor:</span>
+                <span className="text-[10px] text-slate-400 block">{t.humidityLabel}</span>
                 <span className="text-sm font-bold text-emerald-300">
                   {planetaryTelemetry.averageHumidity}
                 </span>
               </div>
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">
-                <span className="text-[10px] text-slate-400 block">Pressão Atmosférica:</span>
+                <span className="text-[10px] text-slate-400 block">{t.pressureLabel}</span>
                 <span className="text-xs font-bold text-slate-200">
                   {planetaryTelemetry.surfacePressure}
                 </span>
               </div>
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">
-                <span className="text-[10px] text-slate-400 block">Temperatura Média:</span>
+                <span className="text-[10px] text-slate-400 block">{t.avgTempLabel}</span>
                 <span className="text-xs font-bold text-amber-300">
                   {planetaryTelemetry.temperatureCelsius} °C ({planetaryTelemetry.temperatureKelvin} K)
                 </span>
               </div>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-900/70 border border-white/5">
-              <span className="text-[10px] text-slate-400 block font-sans">Composição Atmosférica:</span>
+              <span className="text-[10px] text-slate-400 block font-sans">{t.atmCompLabel}</span>
               <span className="text-[11px] font-mono text-slate-200">
                 {planetaryTelemetry.atmosphereComposition}
               </span>
@@ -274,9 +277,9 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           /* Empty State */
           <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400 gap-2">
             <Briefcase className="w-10 h-10 text-slate-600 mb-1" />
-            <span className="text-xs font-bold text-slate-300">Nenhum recurso nesta categoria</span>
+            <span className="text-xs font-bold text-slate-300">{t.emptyCategory}</span>
             <p className="text-[11px] text-slate-500 max-w-xs">
-              Explore o planeta Terra para recolher cristais de quartzo nas praias, minérios de ferro e canisters tecnológicos do GGPEN!
+              {t.emptyCategoryHint}
             </p>
           </div>
         ) : (
@@ -331,10 +334,10 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
                   </div>
                   <div className="text-right">
                     <span className="font-mono text-xs font-bold text-slate-200 block">
-                      {selectedCount} em carga
+                      {selectedCount} {t.inCargo}
                     </span>
                     <span className="text-[9px] text-slate-400 font-mono">
-                      {(selectedDef.weightPerUnit * selectedCount).toFixed(1)} kg total
+                      {(selectedDef.weightPerUnit * selectedCount).toFixed(1)} kg {t.totalWord}
                     </span>
                   </div>
                 </div>
@@ -358,7 +361,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
                 <div className="p-2 rounded-xl bg-slate-900/80 border border-white/5 flex items-start gap-1.5 text-[10px] text-slate-400">
                   <Info className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
                   <span>
-                    <strong className="text-slate-300 font-sans">Aplicação NASA: </strong>
+                    <strong className="text-slate-300 font-sans">{t.nasaAppPrefix}</strong>
                     {selectedDef.nasaApplication}
                   </span>
                 </div>
@@ -380,14 +383,14 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
                   >
                     <CheckCircle2 className="w-3.5 h-3.5 text-white" />
                     {selectedDef.id === 'pure_water'
-                      ? 'Consumir Água (+25% O₂ & +5 Traje)'
+                      ? t.useWater
                       : selectedDef.id === 'oxygen_canister'
-                      ? 'Reabastecer Oxigénio (100%)'
+                      ? t.useOxygen
                       : selectedDef.id === 'suit_nanopolymer'
-                      ? 'Aplicar Nanopolímero (+35% Traje & +10% O₂)'
+                      ? t.useNanopolymer
                       : selectedDef.id === 'ggpen_composite'
-                      ? 'Instalar Blindagem GGPEN (+30% Traje)'
-                      : 'Reforçar Fato com Titânio (+20% Traje)'}
+                      ? t.useComposite
+                      : t.useTitanium}
                   </button>
                 )}
 
@@ -399,7 +402,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
                       className="flex-1 py-2 px-3 rounded-xl bg-rose-950/70 hover:bg-rose-900/80 border border-rose-500/40 text-rose-200 hover:text-white text-[11px] font-bold uppercase tracking-wider transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                      <span>Remover 1</span>
+                      <span>{t.removeOne}</span>
                     </button>
                     {selectedCount > 1 && (
                       <button
@@ -407,7 +410,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
                         className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-rose-950/90 border border-rose-500/30 text-rose-300 hover:text-white text-[11px] font-bold uppercase tracking-wider transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-1.5"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                        <span>Descartar ({selectedCount})</span>
+                        <span>{t.discardAll} ({selectedCount})</span>
                       </button>
                     )}
                   </div>
@@ -423,7 +426,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
         onClick={onClose}
         className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-2xl text-xs font-bold uppercase tracking-wider transition-all active:scale-98 cursor-pointer"
       >
-        Voltar à Exploração
+        {t.backToExplore}
       </button>
     </div>
   );

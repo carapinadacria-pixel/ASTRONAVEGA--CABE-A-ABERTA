@@ -8,6 +8,7 @@ import { PlanetaryCapsuleLander } from './PlanetaryCapsuleLander';
 import { LaunchPadStairs } from './LaunchPadStairs';
 import { Text } from '@react-three/drei';
 import { playCountdownVoice, playRocketFlameoutSound, playRocketSeaCrashSound } from '../audio';
+import { UI_TEXT } from '../utils/i18n';
 
 const _rocketWorldPos = new Vector3();
 const _camTargetPos = new Vector3();
@@ -57,7 +58,8 @@ export function Rocket() {
           const loadedFuel = useGameStore.getState().rocketFuel;
           if (loadedFuel <= 0) {
             setLaunching(false);
-            useGameStore.getState().setLaunchFailureMsg('Foguete sem combustível (0%)! Abasteça no painel antes de descolar.');
+            const lang = useGameStore.getState().language;
+            useGameStore.getState().setLaunchFailureMsg(UI_TEXT[lang].noFuelBeforeLaunch);
             return;
           }
           hasInitializedLaunchRef.current = true;
@@ -324,8 +326,12 @@ export function Rocket() {
     const st = useGameStore.getState();
     if (!isLaunching && st.isNearRocket) {
       if (isEarth) {
+        if (st.gameMode === 'story' && !st.hasSpacesuit) {
+          st.setLaunchFailureMsg(UI_TEXT[st.language].needSuitBeforeRocket);
+          return;
+        }
         if (st.rocketFuel <= 0) {
-          st.setLaunchFailureMsg('Foguete sem combustível (0%)! Abasteça no painel antes de lançar.');
+          st.setLaunchFailureMsg(UI_TEXT[st.language].noFuelBeforeLaunch);
           return;
         }
         const f = st.rocketFuel;

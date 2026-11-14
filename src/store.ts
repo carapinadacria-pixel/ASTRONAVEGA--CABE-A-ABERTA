@@ -1,4 +1,18 @@
 import { create } from 'zustand';
+import { Language, UI_TEXT } from './utils/i18n';
+
+export type GameMusicTrack = 'epic' | 'orbital' | 'tactical' | 'none';
+
+export const livePlayerMotion = {
+  action: 'idle',
+  isJumping: false,
+  inWater: false,
+  deepWater: false,
+  yaw: 0,
+  speed: 0,
+  bodyYOffset: 0,
+  bodyPitch: 0,
+};
 
 export interface PlanetInfo {
   id: string;
@@ -94,6 +108,29 @@ interface GameState {
   setAssemblyProgress: (val: number) => void;
   targetFps: 20 | 30 | 40 | 60;
   setTargetFps: (fps: 20 | 30 | 40 | 60) => void;
+  language: Language;
+  setLanguage: (lang: Language) => void;
+  gameMusicTrack: GameMusicTrack;
+  setGameMusicTrack: (track: GameMusicTrack) => void;
+  appStage: 'mode_select' | 'story_video' | 'playing';
+  gameMode: 'exploration' | 'story';
+  storyStep: 'hangar_suit_up' | 'walk_to_rocket' | 'autopilot_to_moon' | 'moon_exit_flag' | 'mission_complete';
+  hasSpacesuit: boolean;
+  isNearSuitTable: boolean;
+  setIsNearSuitTable: (val: boolean) => void;
+  isNearFlagSpot: boolean;
+  setIsNearFlagSpot: (val: boolean) => void;
+  isFlagPlantedOnMoon: boolean;
+  showMissionCompleteBanner: boolean;
+  dismissMissionCompleteBanner: () => void;
+  activeMissionTip: string | null;
+  setActiveMissionTip: (tip: string | null) => void;
+  startExplorationMode: () => void;
+  startStoryVideo: (gender: 'male' | 'female') => void;
+  finishStoryVideo: () => void;
+  equipSpacesuitsAtTable: () => void;
+  plantAngolaFlagOnMoon: () => void;
+  returnToModeSelect: () => void;
   dbSyncStatus: string;
   setDbSyncStatus: (status: string) => void;
   playerPosition: [number, number, number];
@@ -305,7 +342,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       isDying: false,
       dyingReason: null,
       isLaunching: false,
-      rocketFuel: 0,
+      rocketFuel: state.gameMode === 'story' && !isOffEarth && state.storyStep === 'walk_to_rocket' ? 100 : 0,
       drivingCarId: null,
       carSpeedKmh: 0,
       activeHazard: null,
@@ -322,10 +359,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       playerPosition: targetPos,
       launchTelemetry: {
         countdown: null,
-        fuel: 0,
+        fuel: state.gameMode === 'story' && !isOffEarth && state.storyStep === 'walk_to_rocket' ? 100 : 0,
         speed: 0,
         altitude: 0,
-        weightTons: 420,
+        weightTons: state.gameMode === 'story' && !isOffEarth && state.storyStep === 'walk_to_rocket' ? 2970 : 420,
         status: 'idle',
       },
     };
@@ -347,7 +384,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     deathCount: state.deathCount + 1,
     lastRespawnAt: Date.now(),
     lastRespawnReason: 'rocket_crash',
-    launchFailureMsg: 'O foguete caiu no mar por falta de combustível! O astronauta morreu e reiniciou no Hangar.',
+    launchFailureMsg: UI_TEXT[state.language].seaCrashRespawnMsg,
     respawnTargetPosition: [255, 1.2, 5],
     playerPosition: [255, 1.2, 5],
     launchTelemetry: {
@@ -381,8 +418,127 @@ export const useGameStore = create<GameState>((set, get) => ({
   setSpaceFlightData: (data) => set((state) => ({
     spaceFlightData: { ...state.spaceFlightData, ...data },
   })),
-  targetFps: 60,
+  targetFps: 20,
   setTargetFps: (fps) => set({ targetFps: fps }),
+  language: 'pt',
+  setLanguage: (lang) => set({ language: lang }),
+  gameMusicTrack: 'epic',
+  setGameMusicTrack: (track) => set({ gameMusicTrack: track }),
+  appStage: 'mode_select',
+  gameMode: 'exploration',
+  storyStep: 'hangar_suit_up',
+  hasSpacesuit: true,
+  isNearSuitTable: false,
+  setIsNearSuitTable: (val) => set((state) => (state.isNearSuitTable === val ? state : { isNearSuitTable: val })),
+  isNearFlagSpot: false,
+  setIsNearFlagSpot: (val) => set((state) => (state.isNearFlagSpot === val ? state : { isNearFlagSpot: val })),
+  isFlagPlantedOnMoon: false,
+  showMissionCompleteBanner: false,
+  dismissMissionCompleteBanner: () => set({ showMissionCompleteBanner: false }),
+  activeMissionTip: null,
+  setActiveMissionTip: (tip) => set({ activeMissionTip: tip }),
+  startExplorationMode: () => set({
+    appStage: 'playing',
+    gameMode: 'exploration',
+    storyStep: 'mission_complete',
+    hasSpacesuit: true,
+    isNearSuitTable: false,
+    isNearFlagSpot: false,
+    isFlagPlantedOnMoon: false,
+    showMissionCompleteBanner: false,
+    activeMissionTip: null,
+    planetIndex: 0,
+    gravity: PLANETS[0].gravity,
+    scene: 'surface',
+    isDying: false,
+    dyingReason: null,
+    isLaunching: false,
+    rocketFuel: 0,
+    launchFailureMsg: null,
+    drivingCarId: null,
+    nearCarId: null,
+    isNearRocket: false,
+    health: 100,
+    maxHealth: 100,
+    oxygen: 100,
+    dehydrationSeconds: 0,
+    isOxygenChamberOpen: true,
+    hasCompletedInitialStaging: false,
+    playerPosition: [255, 1.2, 5],
+    respawnTargetPosition: [255, 1.2, 5],
+    launchTelemetry: {
+      countdown: null,
+      fuel: 0,
+      speed: 0,
+      altitude: 0,
+      weightTons: 420,
+      status: 'idle',
+    },
+  }),
+  startStoryVideo: (gender) => set({
+    characterGender: gender,
+    gameMode: 'story',
+    appStage: 'story_video',
+  }),
+  finishStoryVideo: () => set({
+    appStage: 'playing',
+    gameMode: 'story',
+    storyStep: 'hangar_suit_up',
+    hasSpacesuit: false,
+    isNearSuitTable: false,
+    isNearFlagSpot: false,
+    isFlagPlantedOnMoon: false,
+    showMissionCompleteBanner: false,
+    activeMissionTip: null,
+    planetIndex: 0,
+    gravity: PLANETS[0].gravity,
+    scene: 'surface',
+    isDying: false,
+    dyingReason: null,
+    isLaunching: false,
+    rocketFuel: 100,
+    launchFailureMsg: null,
+    drivingCarId: null,
+    nearCarId: null,
+    isNearRocket: false,
+    health: 100,
+    maxHealth: 100,
+    oxygen: 100,
+    dehydrationSeconds: 0,
+    isOxygenChamberOpen: true,
+    hasCompletedInitialStaging: false,
+    playerPosition: [255, 1.2, 5],
+    respawnTargetPosition: [255, 1.2, 5],
+    launchTelemetry: {
+      countdown: null,
+      fuel: 100,
+      speed: 0,
+      altitude: 0,
+      weightTons: 2970,
+      status: 'idle',
+    },
+  }),
+  equipSpacesuitsAtTable: () => set((state) => ({
+    hasSpacesuit: true,
+    isNearSuitTable: false,
+    storyStep: state.gameMode === 'story' && state.storyStep === 'hangar_suit_up' ? 'walk_to_rocket' : state.storyStep,
+  })),
+  plantAngolaFlagOnMoon: () => set((state) => ({
+    isFlagPlantedOnMoon: true,
+    isNearFlagSpot: false,
+    storyStep: state.gameMode === 'story' ? 'mission_complete' : state.storyStep,
+    showMissionCompleteBanner: true,
+  })),
+  returnToModeSelect: () => set({
+    appStage: 'mode_select',
+    isLaunching: false,
+    drivingCarId: null,
+    nearCarId: null,
+    isNearRocket: false,
+    isNearSuitTable: false,
+    isNearFlagSpot: false,
+    activeMissionTip: null,
+  }),
   dbSyncStatus: 'IndexedDB Ativo',
   setDbSyncStatus: (status) => set({ dbSyncStatus: status }),
   characterGender: 'male',
@@ -588,18 +744,23 @@ export const useGameStore = create<GameState>((set, get) => ({
   
   setScene: (scene) => set({ scene }),
   
-  setPlanet: (index) => set({ 
+  setPlanet: (index) => set((state) => ({ 
     planetIndex: index, 
     gravity: PLANETS[index].gravity, 
     scene: 'surface',
+    storyStep: state.gameMode === 'story' && index === 1 && state.storyStep === 'autopilot_to_moon'
+      ? 'moon_exit_flag'
+      : state.storyStep,
     isDying: false,
     dyingReason: null,
     isLaunching: false,
-    rocketFuel: 0,
+    rocketFuel: state.gameMode === 'story' && index === 0 && state.storyStep !== 'mission_complete' ? 100 : 0,
     launchFailureMsg: null,
     drivingCarId: null,
     nearCarId: null,
     isNearRocket: false,
+    isNearSuitTable: false,
+    isNearFlagSpot: false,
     activeHazard: null,
     dehydrationSeconds: 0,
     isOxygenChamberOpen: true,
@@ -609,13 +770,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     bases: [],
     launchTelemetry: {
       countdown: null,
-      fuel: 0,
+      fuel: state.gameMode === 'story' && index === 0 && state.storyStep !== 'mission_complete' ? 100 : 0,
       speed: 0,
       altitude: 0,
-      weightTons: 420,
+      weightTons: state.gameMode === 'story' && index === 0 && state.storyStep !== 'mission_complete' ? 2970 : 420,
       status: 'idle',
     },
-  }),
+  })),
 
   addResource: (type, amount) => set((state) => ({
     resources: { ...state.resources, [type]: state.resources[type] + amount }
@@ -630,8 +791,13 @@ export const useGameStore = create<GameState>((set, get) => ({
   changePlanet: () => set((state) => {
     // Enter space when launched from surface; if departing from any non-Earth planet, initial staging is already done
     const alreadyStaged = state.hasCompletedInitialStaging || state.planetIndex !== 0;
+    const nextStoryStep =
+      state.gameMode === 'story' && state.planetIndex === 0 && state.storyStep === 'walk_to_rocket'
+        ? 'autopilot_to_moon'
+        : state.storyStep;
     return {
       scene: 'space',
+      storyStep: nextStoryStep,
       isDying: false,
       dyingReason: null,
       isLaunching: false,

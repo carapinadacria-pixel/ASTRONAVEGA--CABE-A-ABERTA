@@ -16,6 +16,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useGameStore } from '../store';
+import { UI_TEXT } from '../utils/i18n';
 
 interface PDFViewportLike {
   width: number;
@@ -278,6 +279,8 @@ export const SCIENTIFIC_BOOKS: ScientificBook[] = [
 ];
 
 export function ComputerProximityPrompt() {
+  const language = useGameStore((s) => s.language);
+  const t = UI_TEXT[language];
   const isNearComputer = useGameStore((s) => s.isNearComputer);
   const nearComputerTitle = useGameStore((s) => s.nearComputerTitle);
   const isComputerLibraryOpen = useGameStore((s) => s.isComputerLibraryOpen);
@@ -297,12 +300,12 @@ export function ComputerProximityPrompt() {
         </div>
         <div className="flex flex-col text-left">
           <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-300 font-bold">
-            {nearComputerTitle || 'Terminal de Investigação & Supercomputador'}
+            {nearComputerTitle || t.researchTerminalDefault}
           </span>
           <span className="text-xs sm:text-sm font-extrabold text-white flex items-center gap-1.5">
-            Abrir Biblioteca Científica de Livros
+            {t.openSciLibrary}
             <span className="px-1.5 py-0.5 rounded bg-cyan-500/30 border border-cyan-300/50 text-[10px] font-mono text-cyan-200">
-              CLIQUE / TECLA C
+              {t.clickOrKeyC}
             </span>
           </span>
         </div>
@@ -324,6 +327,8 @@ function PdfCanvasBookReader({
   onPageChange: (p: number) => void;
   onTotalPagesLoaded: (total: number) => void;
 }) {
+  const language = useGameStore((s) => s.language);
+  const t = UI_TEXT[language];
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfDocRef = useRef<PDFDocumentProxyLike | null>(null);
@@ -385,7 +390,7 @@ function PdfCanvasBookReader({
       .catch((err) => {
         if (cancelled) return;
         console.error('Erro ao carregar PDF:', err);
-        setErrorMsg('Não foi possível abrir este ficheiro PDF no terminal.');
+        setErrorMsg(UI_TEXT[useGameStore.getState().language].pdfError);
         setIsLoadingDoc(false);
       });
 
@@ -468,7 +473,7 @@ function PdfCanvasBookReader({
       {(isLoadingDoc || isRenderingPage) && (
         <div className="sticky top-2 z-20 mb-2 px-3 py-1.5 rounded-full bg-slate-950/90 border border-cyan-400/50 text-cyan-300 text-xs font-mono flex items-center gap-2 shadow-lg">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span>{isLoadingDoc ? 'A abrir livro completo...' : `A renderizar página ${page}...`}</span>
+          <span>{isLoadingDoc ? t.openingBook : `${t.renderingPage} ${page}...`}</span>
         </div>
       )}
 
@@ -477,10 +482,10 @@ function PdfCanvasBookReader({
           <AlertCircle className="w-8 h-8 text-red-400" />
           <p className="text-sm font-bold text-red-200">{errorMsg}</p>
           <button
-            onClick={() => setRetryToken((t) => t + 1)}
+            onClick={() => setRetryToken((tok) => tok + 1)}
             className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold cursor-pointer"
           >
-            Tentar Novamente
+            {t.retryBtn}
           </button>
         </div>
       ) : (
@@ -494,6 +499,8 @@ function PdfCanvasBookReader({
 }
 
 export function ComputerBookLibraryModal() {
+  const language = useGameStore((s) => s.language);
+  const t = UI_TEXT[language];
   const isOpen = useGameStore((s) => s.isComputerLibraryOpen);
   const isNearComputer = useGameStore((s) => s.isNearComputer);
   const setOpen = useGameStore((s) => s.setComputerLibraryOpen);
@@ -567,14 +574,14 @@ export function ComputerBookLibraryModal() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-cyan-400 font-bold truncate">
-                  {nearComputerTitle || 'SUPERCOMPUTADOR & ÁREA DE INVESTIGAÇÃO GGPEN'}
+                  {nearComputerTitle || t.libraryBannerTitle}
                 </span>
                 <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                  <Sparkles className="w-3 h-3" /> 3 LIVROS CIENTÍFICOS DISPONÍVEIS
+                  <Sparkles className="w-3 h-3" /> {t.booksAvailableBadge}
                 </span>
               </div>
               <h2 className="text-sm sm:text-lg font-extrabold tracking-tight text-white truncate">
-                {activeBook ? activeBook.title : 'Biblioteca Digital de Investigação Aeroespacial — Selecione um Livro para Ler'}
+                {activeBook ? activeBook.title : t.selectBookPrompt}
               </h2>
             </div>
           </div>
@@ -585,13 +592,13 @@ export function ComputerBookLibraryModal() {
                 onClick={() => setSelectedBookId(null)}
                 className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/15 text-xs font-semibold text-cyan-300 transition-all cursor-pointer active:scale-95"
               >
-                ← Trocar Livro
+                {t.switchBook}
               </button>
             )}
             <button
               onClick={() => setOpen(false)}
               className="p-2 rounded-xl bg-slate-800/90 hover:bg-red-500/20 hover:border-red-400/50 border border-white/10 text-slate-300 hover:text-red-300 transition-all cursor-pointer"
-              title="Fechar Biblioteca"
+              title={t.closeLibrary}
             >
               <X className="w-5 h-5" />
             </button>
@@ -609,10 +616,10 @@ export function ComputerBookLibraryModal() {
             <div className="flex items-center justify-between mb-1 shrink-0">
               <span className="text-xs font-mono uppercase tracking-wider text-slate-400 font-bold flex items-center gap-1.5">
                 <BookOpen className="w-4 h-4 text-cyan-400" />
-                Catálogo de Livros Científicos
+                {t.sciBookCatalog}
               </span>
               <span className="text-[11px] font-mono text-cyan-400 font-semibold">
-                Toque no título para abrir
+                {t.tapToOpenBook}
               </span>
             </div>
 
@@ -632,10 +639,10 @@ export function ComputerBookLibraryModal() {
                     <span
                       className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold uppercase tracking-wider bg-gradient-to-r ${book.accentColor} text-white shadow-sm`}
                     >
-                      Livro {idx + 1} • {book.badgeText}
+                      {t.bookWord} {idx + 1} • {book.badgeText}
                     </span>
                     <span className="text-[11px] font-mono text-slate-400 shrink-0">
-                      {book.pages} págs.
+                      {book.pages} {t.pagesShort}
                     </span>
                   </div>
 
@@ -653,7 +660,7 @@ export function ComputerBookLibraryModal() {
                   </p>
 
                   <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between text-xs font-bold text-cyan-400">
-                    <span>Selecionar e Ler Livro</span>
+                    <span>{t.selectAndReadBook}</span>
                     <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </div>
                 </button>
@@ -664,7 +671,7 @@ export function ComputerBookLibraryModal() {
           {/* Right Reader Area: Shown when a book is selected */}
           {activeBook ? (
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-slate-950">
-              {/* Reader Sub-Header: Mode Switcher (PDF Original vs Resumo dos Capítulos) + Page Controls */}
+              {/* Reader Sub-Header: Mode Switcher (PDF Original vs Chapter Summary) + Page Controls */}
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-900/90 border-b border-white/10 shrink-0">
                 <div className="flex items-center gap-1.5">
                   <button
@@ -676,7 +683,7 @@ export function ComputerBookLibraryModal() {
                     }`}
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    PDF Original Integrado
+                    {t.integratedPdfTab}
                   </button>
                   <button
                     onClick={() => setViewTab('chapters')}
@@ -687,7 +694,7 @@ export function ComputerBookLibraryModal() {
                     }`}
                   >
                     <Layers className="w-3.5 h-3.5" />
-                    Capítulos & Resumo ({activeBook.chapters.length})
+                    {t.chaptersSummaryTab} ({activeBook.chapters.length})
                   </button>
                 </div>
 
@@ -753,10 +760,10 @@ export function ComputerBookLibraryModal() {
                     href={activeBook.pdfUrl}
                     download
                     className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/15 text-[11px] font-mono font-semibold text-cyan-300 flex items-center gap-1 transition-all"
-                    title="Transferir Ficheiro PDF"
+                    title={t.downloadPdf}
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Baixar PDF</span>
+                    <span className="hidden sm:inline">{t.downloadPdf}</span>
                   </a>
                 </div>
               </div>
@@ -764,7 +771,7 @@ export function ComputerBookLibraryModal() {
               {/* Quick Chapter Jump Bar */}
               <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-900/50 border-b border-white/5 overflow-x-auto shrink-0">
                 <span className="text-[10px] font-mono uppercase text-slate-400 shrink-0 mr-1 flex items-center gap-1">
-                  <Compass className="w-3 h-3 text-cyan-400" /> Ir para:
+                  <Compass className="w-3 h-3 text-cyan-400" /> {t.jumpTo}
                 </span>
                 {activeBook.chapters.map((ch, idx) => (
                   <button
@@ -780,7 +787,7 @@ export function ComputerBookLibraryModal() {
                         : 'bg-slate-800/70 hover:bg-slate-800 text-slate-300 border border-white/5'
                     }`}
                   >
-                    {ch.number} (p.{ch.page})
+                    {ch.number} ({t.pagePrefix}{ch.page})
                   </button>
                 ))}
               </div>
@@ -813,7 +820,7 @@ export function ComputerBookLibraryModal() {
                         onClick={() => setViewTab('chapters')}
                         className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 text-[11px] font-semibold shrink-0 cursor-pointer"
                       >
-                        Ver Resumo Detalhado
+                        {t.viewDetailedSummary}
                       </button>
                     </div>
                   )}
@@ -834,7 +841,7 @@ export function ComputerBookLibraryModal() {
                       {activeBook.title}
                     </h3>
                     <p className="text-xs sm:text-sm text-cyan-300 font-mono mb-3">
-                      {activeBook.authors} • {activeBook.pages} páginas ({activeBook.language})
+                      {activeBook.authors} • {activeBook.pages} {t.pagesWord} ({activeBook.language})
                     </p>
                     <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
                       {activeBook.overview}
@@ -862,7 +869,7 @@ export function ComputerBookLibraryModal() {
                             className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
                           >
                             <FileText className="w-3.5 h-3.5" />
-                            Abrir no PDF (Pág. {chapter.page})
+                            {t.openInPdfPage} {chapter.page})
                           </button>
                         </div>
 

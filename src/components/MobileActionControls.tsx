@@ -1,8 +1,11 @@
 import React from 'react';
 import { useGameStore } from '../store';
 import { ArrowUp, DoorClosed, Eye, Camera, Waves, Zap, Wind } from 'lucide-react';
+import { UI_TEXT } from '../utils/i18n';
 
 export function MobileActionControls() {
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
   const setMobileJump = useGameStore((state) => state.setMobileJump);
   const mobileSprint = useGameStore((state) => state.mobileSprint);
   const setMobileSprint = useGameStore((state) => state.setMobileSprint);
@@ -36,7 +39,7 @@ export function MobileActionControls() {
           }}
           onClick={() => toggleCameraMode()}
           className="w-10 h-10 rounded-2xl bg-slate-900/85 hover:bg-slate-800 border border-white/20 text-slate-200 backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 shadow-lg cursor-pointer"
-          title="Alternar Câmera"
+          title={t.toggleCameraTitle}
         >
           <Camera className="w-4 h-4 text-blue-300" />
         </button>
@@ -54,7 +57,7 @@ export function MobileActionControls() {
               ? 'bg-amber-500/35 border-amber-400 text-amber-300 shadow-[0_0_14px_rgba(245,158,11,0.5)]'
               : 'bg-slate-900/85 border-white/20 text-slate-300'
           }`}
-          title="Alternar Viseira"
+          title={t.visorLabel}
         >
           <Eye className="w-4 h-4" />
         </button>
@@ -78,11 +81,11 @@ export function MobileActionControls() {
                     ? 'bg-cyan-600/70 border-cyan-300 text-white shadow-[0_0_18px_rgba(6,182,212,0.6)] animate-pulse'
                     : 'bg-slate-900/85 border-slate-700/80 text-slate-300'
                 }`}
-                title="Portão do Hangar / Interagir"
+                title={t.doorLabel}
               >
                 <DoorClosed className="w-4 h-4" />
                 <span className="text-[7.5px] font-bold uppercase tracking-tighter mt-0.5">
-                  {isNearVAB ? (isHabitatDoorOpen ? 'FECHAR' : 'ABRIR') : 'PORTÃO'}
+                  {isNearVAB ? (isHabitatDoorOpen ? t.closeShort : t.openShort) : t.doorMobileShort}
                 </span>
               </button>
             ) : (
@@ -98,11 +101,11 @@ export function MobileActionControls() {
                     ? 'bg-cyan-950/90 hover:bg-cyan-900/90 border-cyan-400/80 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.45)]'
                     : 'bg-red-950/95 hover:bg-red-900/95 border-red-400 text-red-200 shadow-[0_0_20px_rgba(239,68,68,0.75)] animate-pulse'
                 }`}
-                title="Abrir / Fechar Câmara de Oxigénio"
+                title={t.o2ChamberLabel}
               >
                 <Wind className={`w-4 h-4 ${isOxygenChamberOpen ? 'text-cyan-300' : 'text-red-300'}`} />
                 <span className="text-[7px] font-extrabold uppercase tracking-tighter mt-0.5 leading-none">
-                  {isOxygenChamberOpen ? 'FECHAR O₂' : 'ABRIR O₂'}
+                  {isOxygenChamberOpen ? t.closeO2Short : t.openO2Short}
                 </span>
               </button>
             )
@@ -121,11 +124,11 @@ export function MobileActionControls() {
                 ? 'bg-gradient-to-tr from-amber-500 via-orange-500 to-yellow-400 border-yellow-200 text-white shadow-[0_0_24px_rgba(245,158,11,0.9)] scale-105 animate-pulse'
                 : 'bg-slate-900/90 hover:bg-slate-800 border-slate-700/80 text-slate-300'
             }`}
-            title="Botão de Correr (Toque para Ativar/Desativar Corrida)"
+            title={mobileSprint ? t.runningModeActive : t.clickToRun}
           >
             <Zap className={`w-5 h-5 ${mobileSprint ? 'text-white fill-white' : 'text-amber-400'}`} />
             <span className="text-[9px] font-black uppercase tracking-wider mt-0.5 font-mono drop-shadow">
-              {mobileSprint ? 'CORRENDO' : 'CORRER'}
+              {mobileSprint ? t.runningMobileShort : t.runMobileShort}
             </span>
           </button>
         </div>
@@ -159,7 +162,7 @@ export function MobileActionControls() {
             <ArrowUp className="w-7 h-7" />
           )}
           <span className="text-[9px] font-black uppercase tracking-widest font-mono mt-0.5 drop-shadow">
-            {isSpace ? 'IMPULSO' : isPlayerInWater ? 'NADAR' : 'PULAR'}
+            {isSpace ? t.thrustMobileShort : isPlayerInWater ? t.swimMobileShort : t.jumpMobileShort}
           </span>
         </button>
       </div>

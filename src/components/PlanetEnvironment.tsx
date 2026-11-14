@@ -14,6 +14,7 @@ import { RealisticParkingLot } from './RealisticCars';
 import { WorldResources } from './WorldResources';
 import { PlanetaryBaseModule } from './PlanetaryBaseModule';
 import { RealisticEarthGlobe } from './RealisticEarthGlobe';
+import { HangarSuitTable, MoonFlagMissionProp, StoryCompanion } from './StoryMissionProps';
 
 // Procedural 360-degree Sky & Ocean Horizon Atmosphere Texture for Earth
 let cachedHorizonTexture: CanvasTexture | null = null;
@@ -193,6 +194,7 @@ export function PlanetEnvironment() {
       {isTitan && <TitanEnvironment />}
       {isGasGiant && <GasGiantStationEnvironment planet={currentPlanet} />}
       {isExoplanet && <ExoplanetEnvironment planet={currentPlanet} />}
+      <StoryCompanion />
     </>
   );
 }
@@ -275,6 +277,7 @@ function EarthBase() {
       </group>
 
       <VABInfrastructure />
+      <HangarSuitTable />
       <LaboratoryFacility />
       <SkybridgeConnection />
       <RealisticParkingLot />
@@ -374,6 +377,7 @@ function MoonEnvironment() {
         trimColor="#eab308"
         variant="lunar"
       />
+      <MoonFlagMissionProp />
     </group>
   );
 }

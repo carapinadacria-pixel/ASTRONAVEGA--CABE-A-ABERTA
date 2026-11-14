@@ -25,6 +25,7 @@ import {
 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useGameStore } from '../store';
+import { getOfficialAngolaFlagTexture } from './AngolaFlag';
 
 // Reusable scratch objects for per-frame procedural bone rotations
 const _xAxis = new Vector3(1, 0, 0);
@@ -38,6 +39,8 @@ interface AstronautCharacterProps {
   actionName: string;
   speed: number;
   isJumping: boolean;
+  hasSpacesuit?: boolean;
+  carryingFlag?: boolean;
 }
 
 // Certified Aerospace Spacesuit Color Palettes
@@ -104,6 +107,8 @@ export const AstronautCharacter = React.memo(function AstronautCharacter({
   actionName,
   speed,
   isJumping,
+  hasSpacesuit = true,
+  carryingFlag = false,
 }: AstronautCharacterProps) {
   const theme = SUIT_THEMES[suitStyle] || SUIT_THEMES.white;
 
@@ -116,6 +121,8 @@ export const AstronautCharacter = React.memo(function AstronautCharacter({
       actionName={actionName}
       speed={speed}
       isJumping={isJumping}
+      hasSpacesuit={hasSpacesuit}
+      carryingFlag={carryingFlag}
     />
   );
 });
@@ -132,6 +139,8 @@ function AstronautModel({
   actionName,
   speed,
   isJumping,
+  hasSpacesuit = true,
+  carryingFlag = false,
 }: {
   gender: 'male' | 'female';
   visorMode: 'transparent' | 'gold';
@@ -139,6 +148,8 @@ function AstronautModel({
   actionName: string;
   speed: number;
   isJumping: boolean;
+  hasSpacesuit?: boolean;
+  carryingFlag?: boolean;
 }) {
   const groupRef = useRef<Group>(null);
   const beaconRef = useRef<Mesh | null>(null);
@@ -197,7 +208,7 @@ function AstronautModel({
 
   const { actions } = useAnimations(clips, groupRef);
   const currentAction = useRef<string>('idle');
-  const swimBlendWeight = useRef<number>(actionName === 'drive' ? 1 : 0);
+  const swimBlendWeight = useRef<number>(actionName === 'drive' || actionName === 'passenger' ? 1 : 0);
 
   // Cache avatar bones once BEFORE useEffects so TypeScript & React hooks have immediate access
   const swimBones = useMemo(() => {
@@ -240,11 +251,12 @@ function AstronautModel({
     return sceneAny.__bindPoseCache as { boneRestQuats: Map<string, Quaternion>; hipsRestY: number };
   }, [avatarGltf.scene]);
 
-  // Initial animation start on mount (Never play standing 'idle' clip when mounted in 'drive' mode!)
+  // Initial animation start on mount (Never play standing 'idle' clip when mounted in 'drive' or 'passenger' mode!)
   useEffect(() => {
     if (!actions) return;
     if (
       actionName === 'drive' ||
+      actionName === 'passenger' ||
       actionName === 'swim' ||
       actionName === 'treadWater' ||
       actionName === 'climb' ||
@@ -272,7 +284,7 @@ function AstronautModel({
       rightFoot,
     } = swimBones;
 
-    if (actionName !== 'drive') {
+    if (actionName !== 'drive' && actionName !== 'passenger') {
       if (hips) hips.position.set(0, hipsRestY, 0);
       if (leftLeg) leftLeg.scale.setScalar(1);
       if (rightLeg) rightLeg.scale.setScalar(1);
@@ -296,9 +308,10 @@ function AstronautModel({
       actionName === 'treadWater' ||
       actionName === 'climb' ||
       actionName === 'drive' ||
+      actionName === 'passenger' ||
       actionName === 'dead'
     ) {
-      if (actionName === 'drive' || actionName === 'dead') {
+      if (actionName === 'drive' || actionName === 'passenger' || actionName === 'dead') {
         Object.values(actions).forEach((act) => act?.stop());
         swimBlendWeight.current = 1.0;
       } else {
@@ -328,20 +341,22 @@ function AstronautModel({
   // Cadence scaling matching physical velocity inside useFrame (Zero effect churn!)
   useFrame((state, delta) => {
     const store = useGameStore.getState();
-    const isDrivingCar = actionName === 'drive' || Boolean(store.drivingCarId);
+    const isDrivingCar = actionName === 'drive';
+    const isPassenger = actionName === 'passenger';
+    const isSeatedInCar = isDrivingCar || isPassenger;
 
     // Hide the bulky PLSS rear backpack while seated in a vehicle bucket seat so it never clips through the seat backrest
     if (plssGroupRef.current) {
-      plssGroupRef.current.visible = !isDrivingCar;
+      plssGroupRef.current.visible = !isSeatedInCar;
     }
 
-    if (isDrivingCar && actions) {
+    if (isSeatedInCar && actions) {
       Object.values(actions).forEach((act) => {
         if (act && act.isRunning()) act.stop();
       });
     } else if (actions && currentAction.current && actions[currentAction.current]) {
       const act = actions[currentAction.current];
-      const realSpeed = store.playerSpeed ?? 0;
+      const realSpeed = Math.max(speed || 0, store.playerSpeed ?? 0);
       if (currentAction.current === 'walk') {
         const naturalMocapWalkSpeed = isFemale ? 2.05 : 2.15;
         const targetScale = realSpeed > 0.05 ? realSpeed / naturalMocapWalkSpeed : 1.0;
@@ -355,19 +370,19 @@ function AstronautModel({
       }
     }
 
-    // Smooth transition weight: 1.0 when swimming, treading water, climbing ladder, driving a car, or fallen dead
+    // Smooth transition weight: 1.0 when swimming, treading water, climbing ladder, seated in car, or fallen dead
     const isProceduralActive =
-      isDrivingCar ||
+      isSeatedInCar ||
       actionName === 'dead' ||
       actionName === 'swim' ||
       actionName === 'treadWater' ||
       actionName === 'climb';
     const targetSwimWeight = isProceduralActive ? 1.0 : 0.0;
-    swimBlendWeight.current = isDrivingCar || actionName === 'dead'
+    swimBlendWeight.current = isSeatedInCar || actionName === 'dead'
       ? 1.0
       : MathUtils.damp(swimBlendWeight.current, targetSwimWeight, 12.0, delta);
 
-    if (!isDrivingCar) {
+    if (!isSeatedInCar) {
       const { hips, leftLeg, rightLeg, leftFoot, rightFoot, leftHand, rightHand } = swimBones;
       if (hips) hips.position.set(0, hipsRestY, 0);
       if (leftLeg && leftLeg.scale.x !== 1) leftLeg.scale.setScalar(1);
@@ -400,9 +415,9 @@ function AstronautModel({
       } = swimBones;
 
       const time = state.clock.getElapsedTime();
-      const realSpeed = store.playerSpeed ?? 0;
-      const isClimbingLadder = !isDrivingCar && actionName === 'climb';
-      const isSwimmingMoving = !isDrivingCar && actionName === 'swim' && realSpeed > 0.15;
+      const realSpeed = Math.max(speed || 0, store.playerSpeed ?? 0);
+      const isClimbingLadder = !isSeatedInCar && actionName === 'climb';
+      const isSwimmingMoving = !isSeatedInCar && actionName === 'swim' && realSpeed > 0.15;
 
       const restHips = boneRestQuats.get('Hips');
       const restUpL = boneRestQuats.get('LeftUpLeg');
@@ -419,23 +434,22 @@ function AstronautModel({
       const restSpine1 = boneRestQuats.get('Spine1');
       const restHead = boneRestQuats.get('Head');
 
-      if (isDrivingCar) {
-        // --- SEATED IN CAR COCKPIT BUCKET SEAT & GRIPPING / TURNING THE STEERING WHEEL (VOLANTE) ---
+      if (isSeatedInCar) {
+        // --- SEATED IN CAR COCKPIT BUCKET SEAT (DRIVER GRIPS WHEEL OR PASSENGER RELAXED IN RIGHT SEAT) ---
         const activeCar = store.drivingCarId ? store.carStates[store.drivingCarId] : null;
-        const steer = activeCar ? activeCar.steer : 0;
+        const steer = isDrivingCar && activeCar ? activeCar.steer : 0;
 
-        // Place pelvis on the bucket seat cushion so torso, shoulders, helmet, and arms reaching the wheel are clearly visible
         if (hips && restHips) {
           hips.position.set(0, hipsRestY * 0.50, -0.02);
           _deltaQuat.setFromEuler(_scratchEuler.set(-0.12 * weight, 0, 0));
           hips.quaternion.copy(restHips).multiply(_deltaQuat);
         }
         if (spine && restSpine) {
-          _deltaQuat.setFromEuler(_scratchEuler.set(0.10 * weight, -steer * 0.10 * weight, 0));
+          _deltaQuat.setFromEuler(_scratchEuler.set((isPassenger ? 0.05 : 0.10) * weight, -steer * 0.10 * weight, 0));
           spine.quaternion.copy(restSpine).multiply(_deltaQuat);
         }
         if (spine1 && restSpine1) {
-          _deltaQuat.setFromEuler(_scratchEuler.set(0.12 * weight, -steer * 0.08 * weight, 0));
+          _deltaQuat.setFromEuler(_scratchEuler.set((isPassenger ? 0.06 : 0.12) * weight, -steer * 0.08 * weight, 0));
           spine1.quaternion.copy(restSpine1).multiply(_deltaQuat);
         }
 
@@ -470,64 +484,92 @@ function AstronautModel({
           rightFoot.scale.setScalar(0.12);
         }
 
-        // Left & Right Arms calibrated per skeleton gender so real EVA gloves grip the 9-o'clock (+X) and 3-o'clock (-X) wheel rim cleanly!
         const isFemaleRig = gender === 'female';
-        if (leftArm && restArmL) {
-          const baseExL = isFemaleRig ? 0.40 : -0.60;
-          const baseEyL = isFemaleRig ? 0.40 : 0.60;
-          const baseEzL = isFemaleRig ? 1.20 : 1.80;
-          _deltaQuat.setFromEuler(
-            _scratchEuler.set(
-              (baseExL - steer * 0.28) * weight,
-              baseEyL * weight,
-              (baseEzL - steer * 0.14) * weight
-            )
-          );
-          leftArm.quaternion.copy(restArmL).multiply(_deltaQuat);
-        }
-        if (leftForeArm && restForeArmL) {
-          _deltaQuat.setFromEuler(_scratchEuler.set(0.18 * weight, 0, -0.14 * weight));
-          leftForeArm.quaternion.copy(restForeArmL).multiply(_deltaQuat);
-        }
-        if (leftHand) {
-          leftHand.scale.setScalar(0.95);
-          const restHandL = boneRestQuats.get('LeftHand');
-          if (restHandL) {
-            _deltaQuat.setFromEuler(_scratchEuler.set(0.25 * weight, -0.35 * weight, 0));
-            leftHand.quaternion.copy(restHandL).multiply(_deltaQuat);
+        if (isPassenger) {
+          // Companion seated comfortably in front-right passenger seat with arms resting on lap
+          if (leftArm && restArmL) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.32 * weight, 0.12 * weight, (isFemaleRig ? 0.65 : 0.72) * weight));
+            leftArm.quaternion.copy(restArmL).multiply(_deltaQuat);
           }
-        }
-
-        if (rightArm && restArmR) {
-          const baseExR = isFemaleRig ? 0.40 : -0.20;
-          const baseEyR = isFemaleRig ? -0.40 : -0.60;
-          const baseEzR = isFemaleRig ? -1.20 : -1.60;
-          _deltaQuat.setFromEuler(
-            _scratchEuler.set(
-              (baseExR + steer * 0.28) * weight,
-              baseEyR * weight,
-              (baseEzR - steer * 0.14) * weight
-            )
-          );
-          rightArm.quaternion.copy(restArmR).multiply(_deltaQuat);
-        }
-        if (rightForeArm && restForeArmR) {
-          _deltaQuat.setFromEuler(_scratchEuler.set(0.18 * weight, 0, 0.14 * weight));
-          rightForeArm.quaternion.copy(restForeArmR).multiply(_deltaQuat);
-        }
-        if (rightHand) {
-          rightHand.scale.setScalar(0.95);
-          const restHandR = boneRestQuats.get('RightHand');
-          if (restHandR) {
-            _deltaQuat.setFromEuler(_scratchEuler.set(0.25 * weight, 0.35 * weight, 0));
-            rightHand.quaternion.copy(restHandR).multiply(_deltaQuat);
+          if (leftForeArm && restForeArmL) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.55 * weight, 0, -0.18 * weight));
+            leftForeArm.quaternion.copy(restForeArmL).multiply(_deltaQuat);
           }
-        }
+          if (leftHand) leftHand.scale.setScalar(0.9);
 
-        // Head looking forward through the windshield and slightly into the turn
-        if (head && restHead) {
-          _deltaQuat.setFromEuler(_scratchEuler.set(0.06 * weight, steer * 0.35 * weight, 0));
-          head.quaternion.copy(restHead).multiply(_deltaQuat);
+          if (rightArm && restArmR) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.32 * weight, -0.12 * weight, -(isFemaleRig ? 0.65 : 0.72) * weight));
+            rightArm.quaternion.copy(restArmR).multiply(_deltaQuat);
+          }
+          if (rightForeArm && restForeArmR) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.55 * weight, 0, 0.18 * weight));
+            rightForeArm.quaternion.copy(restForeArmR).multiply(_deltaQuat);
+          }
+          if (rightHand) rightHand.scale.setScalar(0.9);
+
+          if (head && restHead) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.05 * weight, -0.14 * weight, 0));
+            head.quaternion.copy(restHead).multiply(_deltaQuat);
+          }
+        } else {
+          // Driver Left & Right Arms calibrated per skeleton gender so EVA gloves grip the steering wheel cleanly
+          if (leftArm && restArmL) {
+            const baseExL = isFemaleRig ? 0.40 : -0.60;
+            const baseEyL = isFemaleRig ? 0.40 : 0.60;
+            const baseEzL = isFemaleRig ? 1.20 : 1.80;
+            _deltaQuat.setFromEuler(
+              _scratchEuler.set(
+                (baseExL - steer * 0.28) * weight,
+                baseEyL * weight,
+                (baseEzL - steer * 0.14) * weight
+              )
+            );
+            leftArm.quaternion.copy(restArmL).multiply(_deltaQuat);
+          }
+          if (leftForeArm && restForeArmL) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.18 * weight, 0, -0.14 * weight));
+            leftForeArm.quaternion.copy(restForeArmL).multiply(_deltaQuat);
+          }
+          if (leftHand) {
+            leftHand.scale.setScalar(0.95);
+            const restHandL = boneRestQuats.get('LeftHand');
+            if (restHandL) {
+              _deltaQuat.setFromEuler(_scratchEuler.set(0.25 * weight, -0.35 * weight, 0));
+              leftHand.quaternion.copy(restHandL).multiply(_deltaQuat);
+            }
+          }
+
+          if (rightArm && restArmR) {
+            const baseExR = isFemaleRig ? 0.40 : -0.20;
+            const baseEyR = isFemaleRig ? -0.40 : -0.60;
+            const baseEzR = isFemaleRig ? -1.20 : -1.60;
+            _deltaQuat.setFromEuler(
+              _scratchEuler.set(
+                (baseExR + steer * 0.28) * weight,
+                baseEyR * weight,
+                (baseEzR - steer * 0.14) * weight
+              )
+            );
+            rightArm.quaternion.copy(restArmR).multiply(_deltaQuat);
+          }
+          if (rightForeArm && restForeArmR) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.18 * weight, 0, 0.14 * weight));
+            rightForeArm.quaternion.copy(restForeArmR).multiply(_deltaQuat);
+          }
+          if (rightHand) {
+            rightHand.scale.setScalar(0.95);
+            const restHandR = boneRestQuats.get('RightHand');
+            if (restHandR) {
+              _deltaQuat.setFromEuler(_scratchEuler.set(0.25 * weight, 0.35 * weight, 0));
+              rightHand.quaternion.copy(restHandR).multiply(_deltaQuat);
+            }
+          }
+
+          // Head looking forward through the windshield and slightly into the turn
+          if (head && restHead) {
+            _deltaQuat.setFromEuler(_scratchEuler.set(0.06 * weight, steer * 0.35 * weight, 0));
+            head.quaternion.copy(restHead).multiply(_deltaQuat);
+          }
         }
       } else if (actionName === 'dead') {
         // --- COLLAPSED / FALLEN ASTRONAUT RAGDOLL POSE ---
@@ -819,7 +861,7 @@ function getSharedAstronautTextures(): SharedAstronautTextures {
     return texture;
   };
 
-  const angola = safeLoad('/angola_flag.jpg');
+  const angola = getOfficialAngolaFlagTexture() || safeLoad('/angola_flag.jpg');
   const ggpen = safeLoad('/ggpen_logo.png', '/ggpen_logo.jpg');
   const nasaApps = safeLoad('/space_apps_luanda_emblem.png');
   const nasaAppsBanner = safeLoad('/nasa_space_apps_luanda.svg');
@@ -954,14 +996,17 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
 
           suitMat.onBeforeCompile = (shader) => {
             shader.uniforms.uNeckY = { value: neckY };
+            shader.uniforms.uHasSpacesuit = { value: hasSpacesuit ? 1.0 : 0.0 };
+            shader.uniforms.uIsFemale = { value: isFemale ? 1.0 : 0.0 };
             shader.uniforms.uSuitColor = { value: new Color(theme.primary) };
             shader.uniforms.uStripeColor = { value: new Color(theme.commanderStripe) };
             shader.uniforms.uJointColor = { value: new Color(theme.joints) };
             shader.uniforms.uSoleColor = { value: new Color(theme.bootSole) };
 
-            // VOLUMETRIC INFLATION (Expands vertices outward along normals to create thick spacesuit bulk)
+            // VOLUMETRIC INFLATION (Expands vertices outward along normals ONLY when wearing spacesuit)
             shader.vertexShader = `
               uniform float uNeckY;
+              uniform float uHasSpacesuit;
               varying vec3 vLocalPos;
               varying vec3 vLocalNorm;
               ${shader.vertexShader}
@@ -972,7 +1017,7 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
               vLocalNorm = normal;
 
               // Expand suit vertices to give realistic aerospace fabric thickness & lunar overboots
-              if (position.y <= uNeckY) {
+              if (uHasSpacesuit > 0.5 && position.y <= uNeckY) {
                 float inflation = 0.024; // Base 2.4cm thermal micrometeoroid garment
                 // Thick Apollo Lunar Overboots
                 if (position.y < 0.16) {
@@ -990,6 +1035,8 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
               varying vec3 vLocalPos;
               varying vec3 vLocalNorm;
               uniform float uNeckY;
+              uniform float uHasSpacesuit;
+              uniform float uIsFemale;
               uniform vec3 uSuitColor;
               uniform vec3 uStripeColor;
               uniform vec3 uJointColor;
@@ -1000,67 +1047,82 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
               `
               #include <map_fragment>
               // Face & hair remain completely natural with soft realistic skin (above neck)
-              // Below neck: Pure high-fidelity NASA EMU spacesuit
               if (vLocalPos.y <= uNeckY) {
-                vec3 col = uSuitColor;
                 float y = vLocalPos.y;
                 float x = vLocalPos.x;
                 float z = vLocalPos.z;
                 float ax = abs(x);
 
-                // High-fidelity aerospace Beta-Cloth orthofabric (smooth, clean, zero aliased checkerboard artifacts)
-                float fabricSoftGrain = sin(vLocalPos.x * 40.0) * cos(vLocalPos.z * 40.0) * 0.012;
-                col += vec3(fabricSoftGrain);
+                if (uHasSpacesuit > 0.5) {
+                  // Below neck: Pure high-fidelity NASA EMU spacesuit
+                  vec3 col = uSuitColor;
+                  float fabricSoftGrain = sin(vLocalPos.x * 40.0) * cos(vLocalPos.z * 40.0) * 0.012;
+                  col += vec3(fabricSoftGrain);
 
-                // Lunar traction sole on bottom of overboots
-                if (y < 0.038) {
-                  col = uSoleColor;
-                  // Heavy-duty Apollo lunar traction tread lugs
-                  if (y < 0.022 && mod(z * 45.0, 1.0) > 0.5) {
-                    col = vec3(0.02, 0.06, 0.12);
-                  }
-                }
-                // Ankle boot cuff / seal
-                else if (y >= 0.038 && y < 0.08) {
-                  col = uJointColor;
-                }
-                // Knee reinforcement abrasion pads (clean matte aerospace ballistic Kevlar patch)
-                else if (y >= 0.38 && y <= 0.48) {
-                  col = uJointColor;
-                }
-                // Iconic Red Commander Stripe on right thigh (exact match to NASA EMU reference photo!)
-                else if (x > 0.02 && y >= 0.63 && y <= 0.73) {
-                  col = uStripeColor;
-                }
-                // Waist technical utility belt seal
-                else if (y >= 0.88 && y <= 0.94) {
-                  col = uJointColor;
-                }
-                // Arms & Hands
-                else if (ax > 0.16 && y > 0.85 && y < 1.42) {
-                  // Elbow reinforcement abrasion pads (clean matte aerospace ballistic Kevlar patch)
-                  if (y >= 1.06 && y <= 1.16) {
-                    col = uJointColor;
-                  }
-                  // Upper arm Red Commander Stripe (right bicep)
-                  if (x > 0.16 && y >= 1.20 && y <= 1.28) {
-                    col = uStripeColor;
-                  }
-                  // Anodized aluminum wrist disconnect rings
-                  if (ax > 0.34 && y >= 1.02 && y <= 1.05) {
-                    col = (x > 0.0) ? vec3(0.1, 0.5, 0.9) : vec3(0.9, 0.2, 0.2); // Blue left / Red right
-                  }
-                  // EVA pressure gloves
-                  if (ax > 0.35 && y < 1.02) {
-                    col = uJointColor;
-                    // Blue silicone grip fingertips
-                    if (y < 0.92) {
-                      col = uSoleColor;
+                  if (y < 0.038) {
+                    col = uSoleColor;
+                    if (y < 0.022 && mod(z * 45.0, 1.0) > 0.5) {
+                      col = vec3(0.02, 0.06, 0.12);
                     }
                   }
-                }
+                  else if (y >= 0.038 && y < 0.08) {
+                    col = uJointColor;
+                  }
+                  else if (y >= 0.38 && y <= 0.48) {
+                    col = uJointColor;
+                  }
+                  else if (x > 0.02 && y >= 0.63 && y <= 0.73) {
+                    col = uStripeColor;
+                  }
+                  else if (y >= 0.88 && y <= 0.94) {
+                    col = uJointColor;
+                  }
+                  else if (ax > 0.16 && y > 0.85 && y < 1.42) {
+                    if (y >= 1.06 && y <= 1.16) {
+                      col = uJointColor;
+                    }
+                    if (x > 0.16 && y >= 1.20 && y <= 1.28) {
+                      col = uStripeColor;
+                    }
+                    if (ax > 0.34 && y >= 1.02 && y <= 1.05) {
+                      col = (x > 0.0) ? vec3(0.1, 0.5, 0.9) : vec3(0.9, 0.2, 0.2);
+                    }
+                    if (ax > 0.35 && y < 1.02) {
+                      col = uJointColor;
+                      if (y < 0.92) {
+                        col = uSoleColor;
+                      }
+                    }
+                  }
+                  diffuseColor = vec4(col, 1.0);
+                } else {
+                  // Civilian / Normal Hangar Crew Outfit (no spacesuit):
+                  // Tailored crew flight polo/jacket + slate trousers + clean sneakers, keeping hands/skin natural
+                  bool isBareHand = (ax > 0.34 && y < 1.05);
+                  if (!isBareHand) {
+                    vec3 shirtCol = uIsFemale > 0.5
+                      ? vec3(0.07, 0.33, 0.42)   // Teal-slate specialist mission polo (Ana)
+                      : vec3(0.10, 0.21, 0.44);  // Royal navy commander mission polo (Manuel)
+                    vec3 trouserCol = vec3(0.11, 0.14, 0.20);
+                    vec3 shoeCol = vec3(0.06, 0.07, 0.10);
+                    vec3 col = trouserCol;
 
-                diffuseColor = vec4(col, 1.0);
+                    if (y < 0.032) {
+                      col = vec3(0.88, 0.90, 0.94); // Clean white sneaker sole
+                    } else if (y < 0.11) {
+                      col = shoeCol; // Sneakers
+                    } else if (y >= 0.88 && y <= 0.93) {
+                      col = vec3(0.05, 0.05, 0.07); // Crew belt
+                    } else if (y > 0.93) {
+                      col = shirtCol;
+                      // Crisp collar / shoulder accent stripe
+                      if (y > uNeckY - 0.06 && ax < 0.14) {
+                        col = vec3(0.85, 0.68, 0.15);
+                      }
+                    }
+                    diffuseColor = vec4(col, 1.0);
+                  }
+                }
               }
               `
             ).replace(
@@ -1068,19 +1130,18 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
               `
               #include <roughnessmap_fragment>
               if (vLocalPos.y <= uNeckY) {
-                float y = vLocalPos.y;
-                float ax = abs(vLocalPos.x);
-                // Wrist disconnect rings: metallic polish
-                if (ax > 0.34 && y >= 1.02 && y <= 1.05) {
-                  roughnessFactor = 0.22;
-                }
-                // Boots tread & joint bellows: matte rubber/silicone
-                else if (y < 0.08 || (y >= 0.38 && y <= 0.48) || (y >= 1.06 && y <= 1.16)) {
-                  roughnessFactor = 0.75;
-                }
-                // High-tenacity aerospace Beta-Cloth fabric: refined smooth satin sheen
-                else {
-                  roughnessFactor = 0.42;
+                if (uHasSpacesuit > 0.5) {
+                  float y = vLocalPos.y;
+                  float ax = abs(vLocalPos.x);
+                  if (ax > 0.34 && y >= 1.02 && y <= 1.05) {
+                    roughnessFactor = 0.22;
+                  } else if (y < 0.08 || (y >= 0.38 && y <= 0.48) || (y >= 1.06 && y <= 1.16)) {
+                    roughnessFactor = 0.75;
+                  } else {
+                    roughnessFactor = 0.42;
+                  }
+                } else {
+                  roughnessFactor = 0.85;
                 }
               }
               `
@@ -1089,13 +1150,16 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
               `
               #include <metalnessmap_fragment>
               if (vLocalPos.y <= uNeckY) {
-                float y = vLocalPos.y;
-                float ax = abs(vLocalPos.x);
-                // Wrist rings: metallic
-                if (ax > 0.34 && y >= 1.02 && y <= 1.05) {
-                  metalnessFactor = 0.85;
+                if (uHasSpacesuit > 0.5) {
+                  float y = vLocalPos.y;
+                  float ax = abs(vLocalPos.x);
+                  if (ax > 0.34 && y >= 1.02 && y <= 1.05) {
+                    metalnessFactor = 0.85;
+                  } else {
+                    metalnessFactor = 0.02;
+                  }
                 } else {
-                  metalnessFactor = 0.02;
+                  metalnessFactor = 0.0;
                 }
               }
               `
@@ -1110,7 +1174,7 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
     return () => {
       createdSuitMaterials.forEach((m) => m.dispose());
     };
-  }, [avatarGltf.scene, isFemale, theme]);
+  }, [avatarGltf.scene, isFemale, theme, hasSpacesuit]);
 
   // -----------------------------------------------------------------------
   // HARDWARE ACCESSORIES:
@@ -1118,6 +1182,7 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
   // 2. REALISTIC CONTOURED CHEST DCM WITH BADGES & VALVES
   // 3. ERGONOMIC PLSS BACKPACK WITH O2 TANKS & GOLD MLI FOIL
   // 4. EMBROIDERED SHOULDER PATCHES (ANGOLA FLAG & NASA SPACE APPS)
+  // 5. OPTIONAL HANDHELD ANGOLA FLAG ON MOON MISSION
   // -----------------------------------------------------------------------
   useEffect(() => {
     const scene = avatarGltf.scene;
@@ -1125,6 +1190,7 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
     const spine2 = scene.getObjectByName('Spine2');
     const leftArm = scene.getObjectByName('LeftArm');
     const rightArm = scene.getObjectByName('RightArm');
+    const rightHand = scene.getObjectByName('RightHand');
 
     const cleanups: (() => void)[] = [];
 
@@ -1138,13 +1204,9 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
     const matRed = new MeshStandardMaterial({ color: 0xd9230a, roughness: 0.35 });
 
     // =====================================================================
-    // 1. SLEEK NASA EMU HELMET (ATTACHED TO HEAD BONE)
-    // - Full 360° Panoramic Bubble Visor (100% Head & Face Coverage!)
-    // - Aerodynamic White Outer Composite Shell (Encloses Rear Crown & Temples)
-    // - Polished Titanium Neck Seal Collar
-    // - NO BLINDING POINT LIGHT (Soft natural illumination)
+    // 1. SLEEK NASA EMU HELMET (ATTACHED TO HEAD BONE - ONLY WITH SPACESUIT)
     // =====================================================================
-    if (head) {
+    if (head && hasSpacesuit) {
       const helmetGroup = new Group();
       const radius = isFemale ? 0.190 : 0.200;
       // Head center offset
@@ -1226,7 +1288,7 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
     // 2. HARD UPPER TORSO (HUT) & CHEST DCM & BACKPACK PLSS & RANK EPAULETS
     // Realistic aerospace console with depth, switches, valves & mission logos
     // =====================================================================
-    if (spine2) {
+    if (spine2 && hasSpacesuit) {
       const torsoGroup = new Group();
       torsoGroup.position.set(0, 0, 0);
 
@@ -1570,6 +1632,37 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
       });
     }
 
+    // Handheld Angola Flag mounted in Right Hand when carrying the flag on the Moon
+    if (rightHand && carryingFlag) {
+      const flagGroup = new Group();
+      flagGroup.position.set(0.02, 0.05, 0.04);
+      flagGroup.rotation.set(0.35, 0.2, -0.25);
+
+      const pole = new Mesh(new CylinderGeometry(0.016, 0.016, 1.45, 12), matMetal);
+      pole.position.set(0, 0.45, 0);
+      flagGroup.add(pole);
+
+      const crossbar = new Mesh(new CylinderGeometry(0.010, 0.010, 0.68, 10), matMetal);
+      crossbar.rotation.z = Math.PI / 2;
+      crossbar.position.set(0.33, 1.15, 0);
+      flagGroup.add(crossbar);
+
+      const finial = new Mesh(new SphereGeometry(0.028, 12, 12), matGold);
+      finial.position.set(0, 1.19, 0);
+      flagGroup.add(finial);
+
+      const flagBannerMat = new MeshBasicMaterial({ map: textures.angola, side: DoubleSide });
+      const flagBanner = new Mesh(new PlaneGeometry(0.64, 0.42), flagBannerMat);
+      flagBanner.position.set(0.33, 0.93, 0);
+      flagGroup.add(flagBanner);
+
+      rightHand.add(flagGroup);
+      cleanups.push(() => {
+        rightHand.remove(flagGroup);
+        disposeHierarchy(flagGroup);
+      });
+    }
+
     // Shoulder badges are anchored directly to torsoGroup on spine2 for rock-solid stability in all animations
 
     cleanups.push(() => {
@@ -1585,7 +1678,7 @@ function createCurvedPatchGeometry(width: number, height: number, radius: number
     return () => {
       cleanups.forEach((cleanup) => cleanup());
     };
-  }, [avatarGltf.scene, isFemale, theme, visorMode, textures]);
+  }, [avatarGltf.scene, isFemale, theme, visorMode, textures, hasSpacesuit, carryingFlag]);
 
   // Pulsing antenna beacon
   useFrame((state) => {

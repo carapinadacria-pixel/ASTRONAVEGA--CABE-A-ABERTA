@@ -13,17 +13,22 @@ import {
   RepeatWrapping,
   DoubleSide,
   MathUtils,
+  Matrix4,
 } from 'three';
 import { RocketModel } from './RocketModel';
 import { OrbitalCapsule } from './OrbitalCapsule';
 import { RealisticEarthGlobe } from './RealisticEarthGlobe';
 import { Text, Stars, Sphere, Ring, useKeyboardControls, Instances, Instance } from '@react-three/drei';
 import { playSolarEvaporationSound } from '../audio';
+import { getPlanetName } from '../utils/i18n';
 
 // Reusable scratch vectors to eliminate per-frame GC allocations in spaceflight
 const _spaceIdealOffset = new Vector3();
 const _spaceIdealLookAt = new Vector3();
 const _spawnLookTarget = new Vector3();
+const _autoLookMat = new Matrix4();
+const _autoTargetQuat = new Quaternion();
+const _worldUp = new Vector3(0, 1, 0);
 
 interface CosmicPlanet extends PlanetInfo {
   pos: Vector3;
@@ -223,7 +228,11 @@ export function SpaceScene() {
   const initialStaged = useGameStore.getState().hasCompletedInitialStaging || useGameStore.getState().planetIndex !== 0;
   const [stagingProgress, setStagingProgress] = useState(initialStaged ? 1.0 : 0.0);
   const [rcsState, setRcsState] = useState({ pitch: 0, yaw: 0, thrust: 0.4 });
-  const [telemetry, setTelemetry] = useState({ speed: Math.round(180 * 3.6), target: 'Terra', distKm: 0 });
+  const [telemetry, setTelemetry] = useState({
+    speed: Math.round(180 * 3.6),
+    target: getPlanetName('earth', 'Terra', useGameStore.getState().language),
+    distKm: 0,
+  });
   const [, getKeys] = useKeyboardControls();
 
   // Load NASA exoplanets on mount & sync initial staging state
@@ -497,70 +506,86 @@ export function SpaceScene() {
       return;
     }
 
-    const { forward, backward, left, right, jump, sprint } = getKeys();
     const storeState = useGameStore.getState();
-    const joystick = storeState.joystick || { x: 0, y: 0 };
-    const mobileJump = storeState.mobileJump;
-    const mobileSprint = storeState.mobileSprint;
+    const isStoryMoonAutopilot =
+      storeState.gameMode === 'story' && storeState.storyStep === 'autopilot_to_moon';
 
-    const joyMag = Math.min(1, Math.hypot(joystick.x, joystick.y));
-    const hasJoyInput = joyMag > 0.05;
+    if (isStoryMoonAutopilot) {
+      const moonTarget = planetPositions.find((p) => p.type === 'moon') || planetPositions[1];
+      if (moonTarget) {
+        // Aim -Z nose directly toward Moon using Matrix4.lookAt(eye, target, up)
+        _autoLookMat.lookAt(rocketRef.current.position, moonTarget.pos, _worldUp);
+        _autoTargetQuat.setFromRotationMatrix(_autoLookMat);
+        const turnRate = stagingProgress < 0.75 ? 1.6 : 4.2;
+        rocketRef.current.quaternion.slerp(_autoTargetQuat, 1 - Math.exp(-turnRate * delta));
+      }
 
-    // --- ACCELERATION & CRUISE CONTROLS (SMOOTH DAMPED PROPULSION) ---
-    // Base orbital velocity keeps the capsule gliding smoothly even while only steering
-    const isBoosting = jump || sprint || mobileJump || mobileSprint;
-    const isActiveThrust = forward || backward || left || right || hasJoyInput;
+      // Cruise gently during 8s desencapsulamento staging, then accelerate straight into Moon capture
+      const autoSpeed = stagingProgress < 0.85 ? 85 : 460;
+      speedRef.current = MathUtils.damp(speedRef.current, autoSpeed, 2.8, delta);
+      pitchVelRef.current = MathUtils.damp(pitchVelRef.current, 0, 6.0, delta);
+      yawVelRef.current = MathUtils.damp(yawVelRef.current, 0, 6.0, delta);
+      rollAngleRef.current = MathUtils.damp(rollAngleRef.current, 0, 5.0, delta);
+      pitchTiltRef.current = MathUtils.damp(pitchTiltRef.current, 0, 5.0, delta);
+    } else {
+      const { forward, backward, left, right, jump, sprint } = getKeys();
+      const joystick = storeState.joystick || { x: 0, y: 0 };
+      const mobileJump = storeState.mobileJump;
+      const mobileSprint = storeState.mobileSprint;
 
-    let targetSpeed = stagingProgress < 1.0 ? 150 : 185; // Smooth orbital coasting speed
-    if (isBoosting) {
-      targetSpeed = mobileSprint || sprint ? 1450 : 980;
-    } else if (isActiveThrust) {
-      const inputFactor = hasJoyInput ? Math.max(0.45, joyMag) : 1.0;
-      targetSpeed = 540 * inputFactor;
+      const joyMag = Math.min(1, Math.hypot(joystick.x, joystick.y));
+      const hasJoyInput = joyMag > 0.05;
+
+      // --- ACCELERATION & CRUISE CONTROLS (SMOOTH DAMPED PROPULSION) ---
+      const isBoosting = jump || sprint || mobileJump || mobileSprint;
+      const isActiveThrust = forward || backward || left || right || hasJoyInput;
+
+      let targetSpeed = stagingProgress < 1.0 ? 150 : 185; // Smooth orbital coasting speed
+      if (isBoosting) {
+        targetSpeed = mobileSprint || sprint ? 1450 : 980;
+      } else if (isActiveThrust) {
+        const inputFactor = hasJoyInput ? Math.max(0.45, joyMag) : 1.0;
+        targetSpeed = 540 * inputFactor;
+      }
+
+      const accelLambda = isBoosting ? 3.2 : isActiveThrust ? 2.4 : 1.4;
+      speedRef.current = MathUtils.damp(speedRef.current, targetSpeed, accelLambda, delta);
+
+      // --- 6-DOF DAMPED STEERING DYNAMICS (ANALOG JOYSTICK + KEYBOARD CONTROLS) ---
+      let targetPitchVel = 0;
+      if (hasJoyInput) {
+        targetPitchVel -= joystick.y * 1.95;
+      }
+      if (forward) targetPitchVel -= 1.45;
+      if (backward) targetPitchVel += 1.45;
+
+      let targetYawVel = 0;
+      if (hasJoyInput) {
+        targetYawVel += -joystick.x * 2.05;
+      }
+      if (left) targetYawVel += 1.55;
+      if (right) targetYawVel -= 1.55;
+
+      pitchVelRef.current = MathUtils.damp(pitchVelRef.current, targetPitchVel, 6.5, delta);
+      yawVelRef.current = MathUtils.damp(yawVelRef.current, targetYawVel, 6.5, delta);
+
+      if (Math.abs(pitchVelRef.current) > 0.0005) {
+        rocketRef.current.rotateX(pitchVelRef.current * delta);
+      }
+      if (Math.abs(yawVelRef.current) > 0.0005) {
+        rocketRef.current.rotateY(yawVelRef.current * delta);
+      }
+
+      const targetBankRoll = MathUtils.clamp(yawVelRef.current * 0.38, -0.65, 0.65);
+      const targetPitchTilt = MathUtils.clamp(pitchVelRef.current * 0.16, -0.3, 0.3);
+      rollAngleRef.current = MathUtils.damp(rollAngleRef.current, targetBankRoll, 5.5, delta);
+      pitchTiltRef.current = MathUtils.damp(pitchTiltRef.current, targetPitchTilt, 5.5, delta);
     }
-
-    const accelLambda = isBoosting ? 3.2 : isActiveThrust ? 2.4 : 1.4;
-    speedRef.current = MathUtils.damp(speedRef.current, targetSpeed, accelLambda, delta);
 
     const currentFlying = speedRef.current > 15;
     if (currentFlying !== isFlying) {
       setIsFlying(currentFlying);
     }
-
-    // --- 6-DOF DAMPED STEERING DYNAMICS (ANALOG JOYSTICK + KEYBOARD CONTROLS) ---
-    // Inverted Flight Controls ("de cima para baixo"):
-    // Push forward/up (joystick.y > 0, forward key) -> Dives down (pitchInput < 0)
-    // Pull back/down (joystick.y < 0, backward key) -> Climbs up (pitchInput > 0)
-    let targetPitchVel = 0;
-    if (hasJoyInput) {
-      targetPitchVel -= joystick.y * 1.95;
-    }
-    if (forward) targetPitchVel -= 1.45;
-    if (backward) targetPitchVel += 1.45;
-
-    let targetYawVel = 0;
-    if (hasJoyInput) {
-      targetYawVel += -joystick.x * 2.05;
-    }
-    if (left) targetYawVel += 1.55;
-    if (right) targetYawVel -= 1.55;
-
-    // Frame-rate independent exponential damping on angular velocities
-    pitchVelRef.current = MathUtils.damp(pitchVelRef.current, targetPitchVel, 6.5, delta);
-    yawVelRef.current = MathUtils.damp(yawVelRef.current, targetYawVel, 6.5, delta);
-
-    if (Math.abs(pitchVelRef.current) > 0.0005) {
-      rocketRef.current.rotateX(pitchVelRef.current * delta);
-    }
-    if (Math.abs(yawVelRef.current) > 0.0005) {
-      rocketRef.current.rotateY(yawVelRef.current * delta);
-    }
-
-    // Smooth visual banking roll & pitch inclination on inner capsule group (zero gimbal lock!)
-    const targetBankRoll = MathUtils.clamp(yawVelRef.current * 0.38, -0.65, 0.65);
-    const targetPitchTilt = MathUtils.clamp(pitchVelRef.current * 0.16, -0.3, 0.3);
-    rollAngleRef.current = MathUtils.damp(rollAngleRef.current, targetBankRoll, 5.5, delta);
-    pitchTiltRef.current = MathUtils.damp(pitchTiltRef.current, targetPitchTilt, 5.5, delta);
 
     if (visualCapsuleRef.current) {
       visualCapsuleRef.current.rotation.set(
@@ -573,9 +598,7 @@ export function SpaceScene() {
     // Move forward along the capsule's longitudinal trajectory
     rocketRef.current.translateZ(-speedRef.current * delta);
 
-    // Lockstep Zero-Vibration Follow Camera:
-    // Smooth ONLY rotational quaternion and local pullback scalars; add directly to rocketRef.current.position
-    // so camera translates at exact capsule velocity with zero world-space spring oscillation or delta jitter!
+    // Lockstep Zero-Vibration Follow Camera
     const boostFactor = MathUtils.clamp((speedRef.current - 180) / 1100, 0, 1);
     const targetCamDist = MathUtils.lerp(22.5, 28.0, boostFactor);
     const targetCamHeight = MathUtils.lerp(8.0, 9.2, boostFactor);
@@ -611,9 +634,14 @@ export function SpaceScene() {
         minDistance = dist;
         closestPlanet = p;
       }
-      // Planetary atmospheric entry trigger (only after initial staging starts so we don't immediately re-enter)
+      // Planetary atmospheric entry trigger (in Story Autopilot, target Moon exclusively once staging reaches 0.85)
       const entryRadius = p.visualRadius + 120;
-      if (stagingProgress > 0.35 && dist < entryRadius) {
+      if (isStoryMoonAutopilot) {
+        if (p.type === 'moon' && stagingProgress >= 0.85 && dist < entryRadius) {
+          setPlanet(i);
+          break;
+        }
+      } else if (stagingProgress > 0.35 && dist < entryRadius) {
         setPlanet(i);
         break;
       }
@@ -639,7 +667,10 @@ export function SpaceScene() {
     if (state.clock.elapsedTime - lastHudSyncRef.current >= 0.12) {
       lastHudSyncRef.current = state.clock.elapsedTime;
       const currentSpeedKmh = Math.round(speedRef.current * 3.6);
-      const currentTarget = closestPlanet?.name || 'Terra';
+      const lang = useGameStore.getState().language;
+      const currentTarget = closestPlanet
+        ? getPlanetName(closestPlanet.id, closestPlanet.name, lang)
+        : getPlanetName('earth', 'Terra', lang);
       const currentDistKm = parseFloat((minDistance / 100).toFixed(1));
       const normalizedThrust = MathUtils.clamp(speedRef.current / 950, 0.2, 1.35);
 
