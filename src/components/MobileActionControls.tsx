@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useGameStore } from '../store';
 import { ArrowUp, DoorClosed, Eye, Camera, Zap, Wind } from 'lucide-react';
 import { UI_TEXT } from '../utils/i18n';
@@ -19,7 +19,13 @@ export function MobileActionControls() {
   const isHabitatDoorOpen = useGameStore((state) => state.isHabitatDoorOpen);
   const scene = useGameStore((state) => state.scene);
   const planetIndex = useGameStore((state) => state.planetIndex);
+  const drivingCarId = useGameStore((state) => state.drivingCarId);
   const isSpace = scene === 'space';
+
+  useEffect(() => {
+    setMobileJump(false);
+    return () => setMobileJump(false);
+  }, [isSpace, drivingCarId, setMobileJump]);
 
   return (
     <div
@@ -132,8 +138,8 @@ export function MobileActionControls() {
           </button>
         </div>
 
-        {/* Space Thruster Button (Surface Jump/Swim button hidden on mobile per user request) */}
-        {isSpace && (
+        {/* Primary Right Action Button: Space Thruster in orbit OR Surface Jump when on foot */}
+        {isSpace ? (
           <button
             onTouchStart={(e) => {
               e.preventDefault();
@@ -145,17 +151,47 @@ export function MobileActionControls() {
               e.stopPropagation();
               setMobileJump(false);
             }}
+            onTouchCancel={() => setMobileJump(false)}
             onMouseDown={() => setMobileJump(true)}
             onMouseUp={() => setMobileJump(false)}
             onMouseLeave={() => setMobileJump(false)}
+            onContextMenu={(e) => e.preventDefault()}
             className="w-16 h-16 sm:w-18 sm:h-18 rounded-3xl backdrop-blur-2xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 shadow-2xl cursor-pointer bg-gradient-to-tr from-amber-600 via-orange-600 to-red-500 border-amber-300 text-white shadow-[0_0_26px_rgba(245,158,11,0.7)]"
+            title={t.thrustMobileShort}
+            aria-label={t.thrustMobileShort}
           >
             <ArrowUp className="w-7 h-7" />
             <span className="text-[9px] font-black uppercase tracking-widest font-mono mt-0.5 drop-shadow">
               {t.thrustMobileShort}
             </span>
           </button>
-        )}
+        ) : !drivingCarId ? (
+          <button
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMobileJump(true);
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMobileJump(false);
+            }}
+            onTouchCancel={() => setMobileJump(false)}
+            onMouseDown={() => setMobileJump(true)}
+            onMouseUp={() => setMobileJump(false)}
+            onMouseLeave={() => setMobileJump(false)}
+            onContextMenu={(e) => e.preventDefault()}
+            className="w-16 h-16 sm:w-18 sm:h-18 rounded-3xl backdrop-blur-2xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 shadow-2xl cursor-pointer bg-gradient-to-tr from-cyan-600 via-sky-500 to-emerald-500 border-cyan-200 text-white shadow-[0_0_24px_rgba(6,182,212,0.6)]"
+            title={t.jumpOnly}
+            aria-label={t.jumpOnly}
+          >
+            <ArrowUp className="w-7 h-7" />
+            <span className="text-[9px] font-black uppercase tracking-widest font-mono mt-0.5 drop-shadow">
+              {t.jumpMobileShort}
+            </span>
+          </button>
+        ) : null}
       </div>
     </div>
   );

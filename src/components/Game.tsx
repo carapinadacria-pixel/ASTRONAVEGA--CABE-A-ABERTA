@@ -1858,7 +1858,10 @@ const DesktopControlsGuide = memo(function DesktopControlsGuide() {
         ) : (
           <>
             <p>
-              <strong className="text-white/90">W A S D</strong> {t.walkRun}
+              <strong className="text-white/90">W A S D</strong> {t.walkOnly} • <strong className="text-white/90">SHIFT</strong> {t.runOnly}
+            </p>
+            <p>
+              <strong className="text-white/90">SPACE</strong> {t.jumpOnly}
             </p>
             <p>
               <strong className="text-white/90">R</strong> {t.boardCarRocket}
