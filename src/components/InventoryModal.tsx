@@ -11,15 +11,28 @@ import {
   CheckCircle2,
   Compass,
   Trash2,
+  Map as MapIcon,
 } from 'lucide-react';
-import { useGameStore, PLANETS } from '../store';
+import {
+  useGameStore,
+  PLANETS,
+  BASE_BACKPACK_WEIGHT_KG,
+  BASE_BACKPACK_SLOTS,
+  BACKPACK_EXPANSION_WEIGHT_KG,
+  BACKPACK_EXPANSION_SLOTS,
+  MAX_BACKPACK_EXPANSIONS,
+  getResourceMaxStack,
+} from '../store';
 import { UI_TEXT } from '../utils/i18n';
 import {
   RESOURCE_DEFINITIONS,
   NASA_PLANETARY_DATA,
   ResourceCategory,
   ResourceDefinition,
+  getLocalizedResourceDef,
 } from '../utils/nasaData';
+import { BackpackMapTab } from './BackpackMapTab';
+import { playPickupChimeSound } from '../audio';
 
 interface InventoryModalProps {
   onClose: () => void;
@@ -29,12 +42,17 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
   const language = useGameStore((state) => state.language);
   const t = UI_TEXT[language];
   const inventory = useGameStore((state) => state.inventory);
+  const backpackExpansions = useGameStore((state) => state.backpackExpansions);
+  const expandBackpack = useGameStore((state) => state.expandBackpack);
   const planetIndex = useGameStore((state) => state.planetIndex);
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
   const planetId = (currentPlanet.type || 'earth').toLowerCase();
   const planetaryTelemetry = NASA_PLANETARY_DATA[planetId] || NASA_PLANETARY_DATA.earth;
 
-  const [activeCategory, setActiveCategory] = useState<'all' | ResourceCategory | 'telemetry'>('all');
+  const maxWeightKg = BASE_BACKPACK_WEIGHT_KG + backpackExpansions * BACKPACK_EXPANSION_WEIGHT_KG;
+  const maxSlots = BASE_BACKPACK_SLOTS + backpackExpansions * BACKPACK_EXPANSION_SLOTS;
+
+  const [activeCategory, setActiveCategory] = useState<'all' | ResourceCategory | 'map' | 'telemetry'>('all');
   const [selectedItemId, setSelectedItemId] = useState<string>('quartz');
 
   // Compute total weight and occupied slots
@@ -57,21 +75,31 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
 
   const filteredItems = useMemo(() => {
     if (activeCategory === 'all') return itemsList;
-    if (activeCategory === 'telemetry') return [];
+    if (activeCategory === 'telemetry' || activeCategory === 'map') return [];
     return itemsList.filter((item) => item.def.category === activeCategory);
   }, [itemsList, activeCategory]);
 
   const activeSelectedEntry =
     filteredItems.find((item) => item.def.id === selectedItemId) || filteredItems[0] || null;
   const selectedDef = activeSelectedEntry?.def || null;
+  const selectedLoc = selectedDef ? getLocalizedResourceDef(selectedDef, language) : null;
   const selectedCount = activeSelectedEntry?.count || 0;
 
-  // Use consumable item (water, oxygen, or protective armor kits)
+  // Use consumable item (water, ices, CO2, oxygen, or protective armor kits)
   const handleUseItem = (itemId: string) => {
     const store = useGameStore.getState();
-    if (itemId === 'pure_water') {
-      if (store.removeInventoryItem('pure_water', 1)) {
+    if (
+      itemId === 'pure_water' ||
+      itemId === 'lunar_ice' ||
+      itemId === 'cryo_water_ice' ||
+      itemId === 'exo_cryo_ice'
+    ) {
+      if (store.removeInventoryItem(itemId, 1)) {
         store.applyLifeSupportBoost(5, 25);
+      }
+    } else if (itemId === 'co2_ice') {
+      if (store.removeInventoryItem('co2_ice', 1)) {
+        store.applyLifeSupportBoost(0, 35);
       }
     } else if (itemId === 'oxygen_canister') {
       if (store.removeInventoryItem('oxygen_canister', 1)) {
@@ -84,6 +112,10 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
     } else if (itemId === 'ggpen_composite') {
       if (store.removeInventoryItem('ggpen_composite', 1)) {
         store.applyLifeSupportBoost(30, 0, 150);
+      }
+    } else if (itemId === 'exo_superdense_alloy') {
+      if (store.removeInventoryItem('exo_superdense_alloy', 1)) {
+        store.applyLifeSupportBoost(25, 0, 150);
       }
     } else if (itemId === 'titanium_alloy') {
       if (store.removeInventoryItem('titanium_alloy', 1)) {
@@ -135,14 +167,16 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
               <Scale className="w-3.5 h-3.5 text-blue-400" />
               {t.totalLoad}
             </span>
-            <span className="font-mono font-bold text-slate-200">
-              {totalWeight.toFixed(1)} / 40.0 kg
+            <span className="font-mono font-bold tabular-nums text-slate-200">
+              {totalWeight.toFixed(1)} / {maxWeightKg.toFixed(1)} kg
             </span>
           </div>
           <div className="w-full bg-slate-700/60 rounded-full h-1.5 overflow-hidden">
             <div
-              className="bg-blue-400 h-full rounded-full transition-all duration-300"
-              style={{ width: `${Math.min(100, (totalWeight / 40) * 100)}%` }}
+              className={`h-full rounded-full transition-all duration-300 ${
+                totalWeight >= maxWeightKg * 0.9 ? 'bg-rose-400' : 'bg-blue-400'
+              }`}
+              style={{ width: `${Math.min(100, (totalWeight / maxWeightKg) * 100)}%` }}
             />
           </div>
         </div>
@@ -153,14 +187,16 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
               <Layers className="w-3.5 h-3.5 text-amber-400" />
               {t.occupiedSlots}
             </span>
-            <span className="font-mono font-bold text-slate-200">
-              {occupiedSlots} / 20 Slots
+            <span className="font-mono font-bold tabular-nums text-slate-200">
+              {occupiedSlots} / {maxSlots} Slots
             </span>
           </div>
           <div className="w-full bg-slate-700/60 rounded-full h-1.5 overflow-hidden">
             <div
-              className="bg-amber-400 h-full rounded-full transition-all duration-300"
-              style={{ width: `${Math.min(100, (occupiedSlots / 20) * 100)}%` }}
+              className={`h-full rounded-full transition-all duration-300 ${
+                occupiedSlots >= maxSlots ? 'bg-rose-400' : 'bg-amber-400'
+              }`}
+              style={{ width: `${Math.min(100, (occupiedSlots / maxSlots) * 100)}%` }}
             />
           </div>
         </div>
@@ -212,8 +248,19 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           {t.techTab}
         </button>
         <button
-          onClick={() => setActiveCategory('telemetry')}
+          onClick={() => setActiveCategory('map')}
           className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer font-medium whitespace-nowrap text-[11px] flex items-center gap-1 ml-auto ${
+            activeCategory === 'map'
+              ? 'bg-emerald-600 text-white font-bold shadow-md'
+              : 'bg-slate-800/60 text-emerald-300/85 hover:text-emerald-200'
+          }`}
+        >
+          <MapIcon className="w-3 h-3 text-emerald-400" />
+          {t.mapTab}
+        </button>
+        <button
+          onClick={() => setActiveCategory('telemetry')}
+          className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer font-medium whitespace-nowrap text-[11px] flex items-center gap-1 ${
             activeCategory === 'telemetry'
               ? 'bg-amber-600 text-white font-bold shadow-md'
               : 'bg-slate-800/60 text-amber-300/80 hover:text-amber-200'
@@ -225,8 +272,10 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 min-h-[220px] max-h-[360px]">
-        {activeCategory === 'telemetry' ? (
+      <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 min-h-[220px] max-h-[385px]">
+        {activeCategory === 'map' ? (
+          <BackpackMapTab />
+        ) : activeCategory === 'telemetry' ? (
           /* NASA Planetary Telemetry Sheet */
           <div className="flex flex-col gap-2.5 p-3.5 rounded-2xl bg-blue-950/40 border border-blue-400/30 text-xs">
             <div className="flex items-center justify-between border-b border-blue-400/20 pb-2">
@@ -238,7 +287,9 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
               </span>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed italic">
-              "{planetaryTelemetry.scientificDescription}"
+              "{language === 'en' && planetaryTelemetry.scientificDescriptionEn
+                ? planetaryTelemetry.scientificDescriptionEn
+                : planetaryTelemetry.scientificDescription}"
             </p>
             <div className="grid grid-cols-2 gap-2 mt-1 font-mono text-[11px]">
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">
@@ -250,7 +301,9 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">
                 <span className="text-[10px] text-slate-400 block">{t.humidityLabel}</span>
                 <span className="text-sm font-bold text-emerald-300">
-                  {planetaryTelemetry.averageHumidity}
+                  {language === 'en' && planetaryTelemetry.averageHumidityEn
+                    ? planetaryTelemetry.averageHumidityEn
+                    : planetaryTelemetry.averageHumidity}
                 </span>
               </div>
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">
@@ -315,7 +368,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
             </div>
 
             {/* Selected Item Inspection Panel */}
-            {selectedDef && (
+            {selectedDef && selectedLoc && (
               <div className="p-3.5 rounded-2xl bg-slate-800/80 border border-white/10 flex flex-col gap-2">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
@@ -325,28 +378,28 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
                     />
                     <div>
                       <h4 className="text-xs font-bold text-white leading-tight">
-                        {selectedDef.name}
+                        {selectedLoc.name}
                       </h4>
                       <span className="text-[10px] font-mono text-cyan-300">
-                        {selectedDef.formula} • {selectedDef.rarityLabel}
+                        {selectedDef.formula} • {selectedLoc.rarityLabel}
                       </span>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-xs font-bold text-slate-200 block">
-                      {selectedCount} {t.inCargo}
+                    <span className="font-mono text-xs font-bold tabular-nums text-slate-200 block">
+                      {selectedCount}/{getResourceMaxStack(selectedDef.id)} ({t.maxStackUnitLabel})
                     </span>
-                    <span className="text-[9px] text-slate-400 font-mono">
+                    <span className="text-[9px] text-slate-400 font-mono tabular-nums">
                       {(selectedDef.weightPerUnit * selectedCount).toFixed(1)} kg {t.totalWord}
                     </span>
                   </div>
                 </div>
 
                 <p className="text-[11px] text-slate-300 leading-snug">
-                  {selectedDef.description}
+                  {selectedLoc.description}
                 </p>
 
-                {selectedDef.effectLabel && (
+                {selectedLoc.effectLabel && (
                   <div
                     className={`p-2 rounded-xl border text-[10px] font-mono font-bold ${
                       selectedDef.effectType?.startsWith('hazard')
@@ -354,7 +407,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
                         : 'bg-emerald-950/60 border-emerald-400/40 text-emerald-300'
                     }`}
                   >
-                    {selectedDef.effectLabel}
+                    {selectedLoc.effectLabel}
                   </div>
                 )}
 
@@ -362,33 +415,70 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
                   <Info className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
                   <span>
                     <strong className="text-slate-300 font-sans">{t.nasaAppPrefix}</strong>
-                    {selectedDef.nasaApplication}
+                    {selectedLoc.nasaApplication}
                   </span>
                 </div>
 
-                {/* Usable Action Button for Water, Oxygen & Suit Protection Kits */}
+                {/* Backpack Cargo Expansion Button */}
+                {selectedDef.id === 'orbital_cargo_expander' && selectedCount > 0 && (
+                  <button
+                    onClick={() => {
+                      if (expandBackpack()) {
+                        playPickupChimeSound();
+                      }
+                    }}
+                    disabled={backpackExpansions >= MAX_BACKPACK_EXPANSIONS}
+                    className={`w-full mt-1 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-md ${
+                      backpackExpansions >= MAX_BACKPACK_EXPANSIONS
+                        ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white active:scale-98 cursor-pointer'
+                    }`}
+                  >
+                    <Briefcase className="w-3.5 h-3.5" />
+                    {backpackExpansions >= MAX_BACKPACK_EXPANSIONS
+                      ? t.expanderMaxed
+                      : `${t.useExpander} (${backpackExpansions}/${MAX_BACKPACK_EXPANSIONS})`}
+                  </button>
+                )}
+
+                {/* Usable Action Button for Water, Ices, CO2, Oxygen & Suit Protection Kits */}
                 {(selectedDef.id === 'pure_water' ||
+                  selectedDef.id === 'lunar_ice' ||
+                  selectedDef.id === 'cryo_water_ice' ||
+                  selectedDef.id === 'exo_cryo_ice' ||
+                  selectedDef.id === 'co2_ice' ||
                   selectedDef.id === 'oxygen_canister' ||
                   selectedDef.id === 'suit_nanopolymer' ||
                   selectedDef.id === 'ggpen_composite' ||
+                  selectedDef.id === 'exo_superdense_alloy' ||
                   selectedDef.id === 'titanium_alloy') &&
                   selectedCount > 0 && (
                   <button
                     onClick={() => handleUseItem(selectedDef.id)}
                     className={`w-full mt-1 py-2 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-1.5 shadow-md ${
-                      selectedDef.id === 'pure_water' || selectedDef.id === 'oxygen_canister'
+                      selectedDef.id === 'pure_water' ||
+                      selectedDef.id === 'lunar_ice' ||
+                      selectedDef.id === 'cryo_water_ice' ||
+                      selectedDef.id === 'exo_cryo_ice' ||
+                      selectedDef.id === 'co2_ice' ||
+                      selectedDef.id === 'oxygen_canister'
                         ? 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500'
                         : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500'
                     }`}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                    {selectedDef.id === 'pure_water'
+                    {selectedDef.id === 'pure_water' ||
+                    selectedDef.id === 'lunar_ice' ||
+                    selectedDef.id === 'cryo_water_ice' ||
+                    selectedDef.id === 'exo_cryo_ice'
                       ? t.useWater
+                      : selectedDef.id === 'co2_ice'
+                      ? (selectedLoc.effectLabel || t.useWater)
                       : selectedDef.id === 'oxygen_canister'
                       ? t.useOxygen
                       : selectedDef.id === 'suit_nanopolymer'
                       ? t.useNanopolymer
-                      : selectedDef.id === 'ggpen_composite'
+                      : selectedDef.id === 'ggpen_composite' || selectedDef.id === 'exo_superdense_alloy'
                       ? t.useComposite
                       : t.useTitanium}
                   </button>

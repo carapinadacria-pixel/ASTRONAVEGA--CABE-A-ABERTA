@@ -1,6 +1,6 @@
 import React from 'react';
 import { useGameStore } from '../store';
-import { ArrowUp, DoorClosed, Eye, Camera, Waves, Zap, Wind } from 'lucide-react';
+import { ArrowUp, DoorClosed, Eye, Camera, Zap, Wind } from 'lucide-react';
 import { UI_TEXT } from '../utils/i18n';
 
 export function MobileActionControls() {
@@ -15,7 +15,6 @@ export function MobileActionControls() {
   const toggleCameraMode = useGameStore((state) => state.toggleCameraMode);
   const visorMode = useGameStore((state) => state.visorMode);
   const setVisorMode = useGameStore((state) => state.setVisorMode);
-  const isPlayerInWater = useGameStore((state) => state.isPlayerInWater);
   const isNearVAB = useGameStore((state) => state.isNearVAB);
   const isHabitatDoorOpen = useGameStore((state) => state.isHabitatDoorOpen);
   const scene = useGameStore((state) => state.scene);
@@ -133,38 +132,30 @@ export function MobileActionControls() {
           </button>
         </div>
 
-        {/* Primary Jump / Swim Paddle / Space Thruster Button */}
-        <button
-          onTouchStart={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setMobileJump(true);
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setMobileJump(false);
-          }}
-          onMouseDown={() => setMobileJump(true)}
-          onMouseUp={() => setMobileJump(false)}
-          onMouseLeave={() => setMobileJump(false)}
-          className={`w-16 h-16 sm:w-18 sm:h-18 rounded-3xl backdrop-blur-2xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 shadow-2xl cursor-pointer ${
-            isSpace
-              ? 'bg-gradient-to-tr from-amber-600 via-orange-600 to-red-500 border-amber-300 text-white shadow-[0_0_26px_rgba(245,158,11,0.7)]'
-              : isPlayerInWater
-              ? 'bg-gradient-to-tr from-cyan-600 via-teal-600 to-blue-500 border-cyan-200 text-white shadow-[0_0_24px_rgba(6,182,212,0.7)]'
-              : 'bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 border-blue-300 text-white shadow-[0_0_22px_rgba(59,130,246,0.6)]'
-          }`}
-        >
-          {isPlayerInWater && !isSpace ? (
-            <Waves className="w-7 h-7 animate-pulse" />
-          ) : (
+        {/* Space Thruster Button (Surface Jump/Swim button hidden on mobile per user request) */}
+        {isSpace && (
+          <button
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMobileJump(true);
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMobileJump(false);
+            }}
+            onMouseDown={() => setMobileJump(true)}
+            onMouseUp={() => setMobileJump(false)}
+            onMouseLeave={() => setMobileJump(false)}
+            className="w-16 h-16 sm:w-18 sm:h-18 rounded-3xl backdrop-blur-2xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 shadow-2xl cursor-pointer bg-gradient-to-tr from-amber-600 via-orange-600 to-red-500 border-amber-300 text-white shadow-[0_0_26px_rgba(245,158,11,0.7)]"
+          >
             <ArrowUp className="w-7 h-7" />
-          )}
-          <span className="text-[9px] font-black uppercase tracking-widest font-mono mt-0.5 drop-shadow">
-            {isSpace ? t.thrustMobileShort : isPlayerInWater ? t.swimMobileShort : t.jumpMobileShort}
-          </span>
-        </button>
+            <span className="text-[9px] font-black uppercase tracking-widest font-mono mt-0.5 drop-shadow">
+              {t.thrustMobileShort}
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

@@ -14,7 +14,8 @@ import { RealisticParkingLot } from './RealisticCars';
 import { WorldResources } from './WorldResources';
 import { PlanetaryBaseModule } from './PlanetaryBaseModule';
 import { RealisticEarthGlobe } from './RealisticEarthGlobe';
-import { HangarSuitTable, MoonFlagMissionProp, StoryCompanion } from './StoryMissionProps';
+import { SaturnInteriorAtmosphere } from './RealisticCelestialBodies';
+import { HangarSuitTable, MoonFlagMissionProp, StoryCompanion, AnimatedMissionFloorArrows } from './StoryMissionProps';
 
 // Procedural 360-degree Sky & Ocean Horizon Atmosphere Texture for Earth
 let cachedHorizonTexture: CanvasTexture | null = null;
@@ -194,6 +195,8 @@ export function PlanetEnvironment() {
       {isTitan && <TitanEnvironment />}
       {isGasGiant && <GasGiantStationEnvironment planet={currentPlanet} />}
       {isExoplanet && <ExoplanetEnvironment planet={currentPlanet} />}
+      <WorldResources />
+      <AnimatedMissionFloorArrows />
       <StoryCompanion />
     </>
   );
@@ -241,7 +244,6 @@ function EarthBase() {
 
       <CompleteEarthVegetation />
       <CoastalOcean />
-      <WorldResources />
 
       {/* Cryogenic Storage Tanks */}
       <group position={[-18, 0, 26]}>
@@ -637,31 +639,37 @@ function GasGiantStationEnvironment({ planet }: { planet: PlanetInfo }) {
 
   return (
     <group>
-      {/* Monumental Gas Deck Sky Dome */}
-      <mesh scale={[-1, 1, 1]} position={[0, 0, 0]}>
-        <sphereGeometry args={[2500, 24, 16]} />
-        <meshBasicMaterial color={skyColor} side={BackSide} />
-      </mesh>
+      {isSaturn ? (
+        <SaturnInteriorAtmosphere />
+      ) : (
+        <>
+          {/* Monumental Gas Deck Sky Dome */}
+          <mesh scale={[-1, 1, 1]} position={[0, 0, 0]}>
+            <sphereGeometry args={[2500, 24, 16]} />
+            <meshBasicMaterial color={skyColor} side={BackSide} />
+          </mesh>
 
-      <fog attach="fog" args={[skyColor, 80, 850]} />
+          <fog attach="fog" args={[skyColor, 80, 850]} />
 
-      {/* Swirling Gigantic Cloud Deck Below the Station */}
-      <mesh position={[0, -25, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[3000, 3000]} />
-        <meshStandardMaterial color={cloudColor} roughness={0.9} />
-      </mesh>
+          {/* Swirling Gigantic Cloud Deck Below the Station */}
+          <mesh position={[0, -25, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[3000, 3000]} />
+            <meshStandardMaterial color={cloudColor} roughness={0.9} />
+          </mesh>
+        </>
+      )}
 
-      {/* High-Tech Floating Aerospace Platform (Gantry Deck) */}
+      {/* High-Tech Floating Aerospace Platform (Expanded 98m Gantry Deck) */}
       <RigidBody type="fixed" colliders="cuboid" position={[0, -0.2, 0]}>
         <mesh receiveShadow>
-          <cylinderGeometry args={[65, 72, 0.6, 32]} />
+          <cylinderGeometry args={[98, 105, 0.6, 48]} />
           <meshStandardMaterial color="#334155" metalness={0.85} roughness={0.3} />
         </mesh>
       </RigidBody>
 
       {/* Floating Station Perimeter Railings */}
-      <mesh position={[0, 0.6, 0]}>
-        <torusGeometry args={[64, 0.12, 8, 48]} />
+      <mesh position={[0, 0.6, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[97, 0.14, 8, 64]} />
         <meshStandardMaterial color="#eab308" metalness={0.7} />
       </mesh>
 

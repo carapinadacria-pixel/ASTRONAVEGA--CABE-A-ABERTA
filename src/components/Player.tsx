@@ -1574,13 +1574,14 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
     livePlayerMotion.bodyYOffset = bodyRef.current ? bodyRef.current.position.y : 0;
     livePlayerMotion.bodyPitch = bodyRef.current ? bodyRef.current.rotation.x : 0;
 
-    // Spatial audio: Earth ocean/machinery fades out away from source; footsteps play on all planets
+    // Spatial audio: Earth ocean/machinery fades out away from source; footsteps differentiate walk vs sprint accurately
     updateSpatialAudio(
       [playerPos.x, playerPos.y, playerPos.z],
       isMoving,
       horizSpeed,
       isGrounded,
-      isInWaterZone
+      isInWaterZone,
+      isRunning && horizSpeed > 2.0
     );
 
     if (isLaunching) return;

@@ -1,7 +1,38 @@
 import { create } from 'zustand';
 import { Language, UI_TEXT } from './utils/i18n';
+import { RESOURCE_DEFINITIONS } from './utils/nasaData';
 
-export type GameMusicTrack = 'epic' | 'orbital' | 'tactical' | 'none';
+export type GameMusicTrack = 'beethoven_op68' | 'epic' | 'orbital' | 'tactical' | 'none';
+
+export const BASE_BACKPACK_WEIGHT_KG = 40;
+export const BASE_BACKPACK_SLOTS = 20;
+export const BACKPACK_EXPANSION_WEIGHT_KG = 20;
+export const BACKPACK_EXPANSION_SLOTS = 6;
+export const MAX_BACKPACK_EXPANSIONS = 3;
+
+export function getResourceMaxStack(itemId: string): number {
+  const def = RESOURCE_DEFINITIONS[itemId];
+  if (!def) return 10;
+  if (def.category === 'tech' || def.rarity === 'legendary') return 5;
+  return 10;
+}
+
+export const INITIAL_INVENTORY: Record<string, number> = {
+  quartz: 2,
+  iron_ore: 1,
+  pure_water: 3,
+  silicon: 0,
+  lithium: 0,
+  oxygen_canister: 1,
+  hydrogen_fuel: 0,
+  titanium_alloy: 0,
+  ggpen_composite: 0,
+  plasma_core: 0,
+  meteorite_shard: 0,
+  suit_nanopolymer: 0,
+  uranium_ore: 0,
+  toxic_sulfur: 0,
+};
 
 export const livePlayerMotion = {
   action: 'idle',
@@ -23,22 +54,25 @@ export interface PlanetInfo {
   distance?: number;
   mass?: number;
   radius?: number;
+  density?: number;      // g/cm³ from Solar System / NASA Exoplanet API
+  insolation?: number;   // Earth flux S⊕
   discoveryMethod?: string;
   discoveryYear?: number;
-  temperature?: number;
+  temperature?: number;  // Kelvin
+  apiSource?: string;
 }
 
 export let PLANETS: PlanetInfo[] = [
-  { id: 'earth', name: 'Terra', gravity: 9.8, type: 'earth', color: '#0284c7' },
-  { id: 'moon', name: 'Lua', gravity: 1.62, type: 'moon', color: '#94a3b8' },
-  { id: 'mercury', name: 'Mercúrio', gravity: 3.70, type: 'mercury', color: '#78716c' },
-  { id: 'venus', name: 'Vénus', gravity: 8.87, type: 'venus', color: '#f59e0b' },
-  { id: 'mars', name: 'Marte', gravity: 3.72, type: 'mars', color: '#c2410c' },
-  { id: 'jupiter', name: 'Júpiter', gravity: 24.79, type: 'jupiter', color: '#d97706' },
-  { id: 'saturn', name: 'Saturno', gravity: 10.44, type: 'saturn', color: '#eab308' },
-  { id: 'uranus', name: 'Úrano', gravity: 8.69, type: 'uranus', color: '#38bdf8' },
-  { id: 'neptune', name: 'Neptuno', gravity: 11.15, type: 'neptune', color: '#2563eb' },
-  { id: 'titan', name: 'Titã', gravity: 1.35, type: 'titan', color: '#fbbf24' }
+  { id: 'earth', name: 'Terra', gravity: 9.8, type: 'earth', color: '#0284c7', density: 5.51, temperature: 288, radius: 1.0, mass: 1.0, apiSource: 'NASA Fact Sheet' },
+  { id: 'moon', name: 'Lua', gravity: 1.62, type: 'moon', color: '#94a3b8', density: 3.34, temperature: 220, radius: 0.273, mass: 0.0123, apiSource: 'NASA Fact Sheet' },
+  { id: 'mercury', name: 'Mercúrio', gravity: 3.70, type: 'mercury', color: '#78716c', density: 5.43, temperature: 440, radius: 0.383, mass: 0.055, apiSource: 'NASA Fact Sheet' },
+  { id: 'venus', name: 'Vénus', gravity: 8.87, type: 'venus', color: '#f59e0b', density: 5.24, temperature: 737, radius: 0.949, mass: 0.815, apiSource: 'NASA Fact Sheet' },
+  { id: 'mars', name: 'Marte', gravity: 3.72, type: 'mars', color: '#c2410c', density: 3.93, temperature: 210, radius: 0.532, mass: 0.107, apiSource: 'NASA Fact Sheet' },
+  { id: 'jupiter', name: 'Júpiter', gravity: 24.79, type: 'jupiter', color: '#d97706', density: 1.33, temperature: 165, radius: 11.21, mass: 317.8, apiSource: 'NASA Fact Sheet' },
+  { id: 'saturn', name: 'Saturno', gravity: 10.44, type: 'saturn', color: '#eab308', density: 0.69, temperature: 134, radius: 9.45, mass: 95.16, apiSource: 'NASA Fact Sheet' },
+  { id: 'uranus', name: 'Úrano', gravity: 8.69, type: 'uranus', color: '#38bdf8', density: 1.27, temperature: 76, radius: 4.01, mass: 14.54, apiSource: 'NASA Fact Sheet' },
+  { id: 'neptune', name: 'Neptuno', gravity: 11.15, type: 'neptune', color: '#2563eb', density: 1.64, temperature: 72, radius: 3.88, mass: 17.15, apiSource: 'NASA Fact Sheet' },
+  { id: 'titan', name: 'Titã', gravity: 1.35, type: 'titan', color: '#fbbf24', density: 1.88, temperature: 94, radius: 0.404, mass: 0.0225, apiSource: 'NASA Fact Sheet' }
 ];
 
 interface GameState {
@@ -82,6 +116,7 @@ interface GameState {
   changePlanet: () => void;
   buildBase: (x: number, z: number) => void;
   craftItem: (item: string) => void;
+  planetaryApiVersion: number;
   loadExoplanets: () => Promise<void>;
   joystick: { x: number; y: number };
   setJoystick: (pos: { x: number; y: number }) => void;
@@ -110,10 +145,19 @@ interface GameState {
   setTargetFps: (fps: 20 | 30 | 40 | 60) => void;
   language: Language;
   setLanguage: (lang: Language) => void;
+  menuMusicTrack: GameMusicTrack;
+  setMenuMusicTrack: (track: GameMusicTrack) => void;
   gameMusicTrack: GameMusicTrack;
   setGameMusicTrack: (track: GameMusicTrack) => void;
+  musicVolume: number;
+  setMusicVolume: (vol: number) => void;
+  sfxVolume: number;
+  setSfxVolume: (vol: number) => void;
   appStage: 'mode_select' | 'story_video' | 'playing';
   gameMode: 'exploration' | 'story';
+  lastSessionMode: 'exploration' | 'story' | null;
+  explorationWithCompanion: boolean;
+  setExplorationWithCompanion: (val: boolean) => void;
   storyStep: 'hangar_suit_up' | 'walk_to_rocket' | 'autopilot_to_moon' | 'moon_exit_flag' | 'mission_complete';
   hasSpacesuit: boolean;
   isNearSuitTable: boolean;
@@ -138,7 +182,11 @@ interface GameState {
   playerSpeed: number;
   setPlayerSpeed: (speed: number) => void;
   inventory: Record<string, number>;
-  addInventoryItem: (itemId: string, amount?: number) => void;
+  backpackExpansions: number;
+  expandBackpack: () => boolean;
+  backpackLimitAlert: { reason: 'weight' | 'slots' | 'stack' | 'expanded'; itemId: string; timestamp: number } | null;
+  clearBackpackLimitAlert: () => void;
+  addInventoryItem: (itemId: string, amount?: number) => boolean;
   removeInventoryItem: (itemId: string, amount?: number) => boolean;
   collectedWorldNodeIds: string[];
   markNodeCollected: (nodeId: string) => void;
@@ -151,6 +199,8 @@ interface GameState {
     stagingProgress: number;
     solarHeatPct: number;
     isEvaporating: boolean;
+    shipPos: [number, number, number];
+    shipYaw: number;
   };
   setSpaceFlightData: (data: Partial<{
     speed: number;
@@ -159,6 +209,8 @@ interface GameState {
     stagingProgress: number;
     solarHeatPct: number;
     isEvaporating: boolean;
+    shipPos: [number, number, number];
+    shipYaw: number;
   }>) => void;
   hasCompletedInitialStaging: boolean;
   setHasCompletedInitialStaging: (val: boolean) => void;
@@ -259,6 +311,7 @@ export const INITIAL_CARS: Record<
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
+  planetaryApiVersion: 0,
   isWebGLActive: true,
   setIsWebGLActive: (active) => set({ isWebGLActive: active }),
   drivingCarId: null,
@@ -414,6 +467,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     stagingProgress: 0,
     solarHeatPct: 0,
     isEvaporating: false,
+    shipPos: [6200, 0, 0],
+    shipYaw: 0,
   },
   setSpaceFlightData: (data) => set((state) => ({
     spaceFlightData: { ...state.spaceFlightData, ...data },
@@ -422,10 +477,19 @@ export const useGameStore = create<GameState>((set, get) => ({
   setTargetFps: (fps) => set({ targetFps: fps }),
   language: 'pt',
   setLanguage: (lang) => set({ language: lang }),
+  menuMusicTrack: 'beethoven_op68',
+  setMenuMusicTrack: (track) => set({ menuMusicTrack: track }),
   gameMusicTrack: 'epic',
   setGameMusicTrack: (track) => set({ gameMusicTrack: track }),
+  musicVolume: 0.85,
+  setMusicVolume: (vol) => set({ musicVolume: Math.max(0, Math.min(1, vol)) }),
+  sfxVolume: 0.05,
+  setSfxVolume: (vol) => set({ sfxVolume: Math.max(0, Math.min(1, vol)) }),
   appStage: 'mode_select',
   gameMode: 'exploration',
+  lastSessionMode: null,
+  explorationWithCompanion: true,
+  setExplorationWithCompanion: (val) => set({ explorationWithCompanion: val }),
   storyStep: 'hangar_suit_up',
   hasSpacesuit: true,
   isNearSuitTable: false,
@@ -437,48 +501,76 @@ export const useGameStore = create<GameState>((set, get) => ({
   dismissMissionCompleteBanner: () => set({ showMissionCompleteBanner: false }),
   activeMissionTip: null,
   setActiveMissionTip: (tip) => set({ activeMissionTip: tip }),
-  startExplorationMode: () => set({
-    appStage: 'playing',
-    gameMode: 'exploration',
-    storyStep: 'mission_complete',
-    hasSpacesuit: true,
-    isNearSuitTable: false,
-    isNearFlagSpot: false,
-    isFlagPlantedOnMoon: false,
-    showMissionCompleteBanner: false,
-    activeMissionTip: null,
-    planetIndex: 0,
-    gravity: PLANETS[0].gravity,
-    scene: 'surface',
-    isDying: false,
-    dyingReason: null,
-    isLaunching: false,
-    rocketFuel: 0,
-    launchFailureMsg: null,
-    drivingCarId: null,
-    nearCarId: null,
-    isNearRocket: false,
-    health: 100,
-    maxHealth: 100,
-    oxygen: 100,
-    dehydrationSeconds: 0,
-    isOxygenChamberOpen: true,
-    hasCompletedInitialStaging: false,
-    playerPosition: [255, 1.2, 5],
-    respawnTargetPosition: [255, 1.2, 5],
-    launchTelemetry: {
-      countdown: null,
-      fuel: 0,
-      speed: 0,
-      altitude: 0,
-      weightTons: 420,
-      status: 'idle',
-    },
+  startExplorationMode: () => set((state) => {
+    const switchedMode = state.lastSessionMode !== null && state.lastSessionMode !== 'exploration';
+    return {
+      appStage: 'playing',
+      gameMode: 'exploration',
+      lastSessionMode: 'exploration',
+      storyStep: 'mission_complete',
+      hasSpacesuit: true,
+      isNearSuitTable: false,
+      isNearFlagSpot: false,
+      isFlagPlantedOnMoon: false,
+      showMissionCompleteBanner: false,
+      activeMissionTip: null,
+      planetIndex: 0,
+      gravity: PLANETS[0].gravity,
+      scene: 'surface',
+      isDying: false,
+      dyingReason: null,
+      isLaunching: false,
+      rocketFuel: 0,
+      launchFailureMsg: null,
+      drivingCarId: null,
+      nearCarId: null,
+      isNearRocket: false,
+      health: 100,
+      maxHealth: 100,
+      oxygen: 100,
+      dehydrationSeconds: 0,
+      isOxygenChamberOpen: true,
+      hasCompletedInitialStaging: false,
+      playerPosition: [255, 1.2, 5],
+      respawnTargetPosition: [255, 1.2, 5],
+      launchTelemetry: {
+        countdown: null,
+        fuel: 0,
+        speed: 0,
+        altitude: 0,
+        weightTons: 420,
+        status: 'idle',
+      },
+      ...(switchedMode
+        ? {
+            inventory: { ...INITIAL_INVENTORY },
+            collectedWorldNodeIds: [],
+            resources: { iron: 0, titanium: 0, plasma: 0 },
+            backpackExpansions: 0,
+            recentCollectedItem: null,
+            backpackLimitAlert: null,
+          }
+        : {}),
+    };
   }),
-  startStoryVideo: (gender) => set({
-    characterGender: gender,
-    gameMode: 'story',
-    appStage: 'story_video',
+  startStoryVideo: (gender) => set((state) => {
+    const switchedMode = state.lastSessionMode !== null && state.lastSessionMode !== 'story';
+    return {
+      characterGender: gender,
+      gameMode: 'story',
+      lastSessionMode: 'story',
+      appStage: 'story_video',
+      ...(switchedMode
+        ? {
+            inventory: { ...INITIAL_INVENTORY },
+            collectedWorldNodeIds: [],
+            resources: { iron: 0, titanium: 0, plasma: 0 },
+            backpackExpansions: 0,
+            recentCollectedItem: null,
+            backpackLimitAlert: null,
+          }
+        : {}),
+    };
   }),
   finishStoryVideo: () => set({
     appStage: 'playing',
@@ -579,22 +671,26 @@ export const useGameStore = create<GameState>((set, get) => ({
     titanium: 0,
     plasma: 0,
   },
-  inventory: {
-    quartz: 2,
-    iron_ore: 1,
-    pure_water: 3,
-    silicon: 0,
-    lithium: 0,
-    oxygen_canister: 1,
-    hydrogen_fuel: 0,
-    titanium_alloy: 0,
-    ggpen_composite: 0,
-    plasma_core: 0,
-    meteorite_shard: 0,
-    suit_nanopolymer: 0,
-    uranium_ore: 0,
-    toxic_sulfur: 0,
+  inventory: { ...INITIAL_INVENTORY },
+  backpackExpansions: 0,
+  expandBackpack: () => {
+    const state = get();
+    if (state.backpackExpansions >= MAX_BACKPACK_EXPANSIONS) return false;
+    const count = state.inventory.orbital_cargo_expander || 0;
+    if (count < 1) return false;
+    set({
+      inventory: { ...state.inventory, orbital_cargo_expander: count - 1 },
+      backpackExpansions: state.backpackExpansions + 1,
+      backpackLimitAlert: {
+        reason: 'expanded',
+        itemId: 'orbital_cargo_expander',
+        timestamp: Date.now(),
+      },
+    });
+    return true;
   },
+  backpackLimitAlert: null,
+  clearBackpackLimitAlert: () => set({ backpackLimitAlert: null }),
   collectedWorldNodeIds: [],
   markNodeCollected: (nodeId: string) => set((state) => ({
     collectedWorldNodeIds: state.collectedWorldNodeIds.includes(nodeId)
@@ -603,33 +699,74 @@ export const useGameStore = create<GameState>((set, get) => ({
   })),
   recentCollectedItem: null,
   clearRecentCollectedItem: () => set({ recentCollectedItem: null }),
-  addInventoryItem: (itemId: string, amount = 1) => set((state) => {
+  addInventoryItem: (itemId: string, amount = 1) => {
+    const state = get();
     const current = state.inventory[itemId] || 0;
-    const newCount = current + amount;
-    
-    // Also mirror to legacy resources if applicable for base building/crafting compatibility
-    const updatedResources = { ...state.resources };
-    if (itemId === 'iron_ore') updatedResources.iron += amount;
-    if (itemId === 'titanium_alloy') updatedResources.titanium += amount;
-    if (itemId === 'plasma_core') updatedResources.plasma += amount;
+    const maxStack = getResourceMaxStack(itemId);
+    if (current >= maxStack) {
+      set({ backpackLimitAlert: { reason: 'stack', itemId, timestamp: Date.now() } });
+      return false;
+    }
 
-    return {
+    let totalWeight = 0;
+    let occupiedSlots = 0;
+    Object.entries(state.inventory).forEach(([id, count]) => {
+      if (count > 0) {
+        const def = RESOURCE_DEFINITIONS[id];
+        if (def) {
+          totalWeight += def.weightPerUnit * count;
+          occupiedSlots += 1;
+        }
+      }
+    });
+
+    const maxSlots = BASE_BACKPACK_SLOTS + state.backpackExpansions * BACKPACK_EXPANSION_SLOTS;
+    if (current === 0 && occupiedSlots + 1 > maxSlots) {
+      set({ backpackLimitAlert: { reason: 'slots', itemId, timestamp: Date.now() } });
+      return false;
+    }
+
+    const maxWeight = BASE_BACKPACK_WEIGHT_KG + state.backpackExpansions * BACKPACK_EXPANSION_WEIGHT_KG;
+    const unitWeight = RESOURCE_DEFINITIONS[itemId]?.weightPerUnit ?? 1.0;
+    const remainingWeight = Math.max(0, maxWeight - totalWeight);
+    const maxByWeight = unitWeight > 0 ? Math.floor((remainingWeight + 1e-6) / unitWeight) : amount;
+    const accepted = Math.min(amount, maxStack - current, maxByWeight);
+
+    if (accepted <= 0) {
+      set({ backpackLimitAlert: { reason: 'weight', itemId, timestamp: Date.now() } });
+      return false;
+    }
+
+    const newCount = current + accepted;
+    const updatedResources = { ...state.resources };
+    if (itemId === 'iron_ore') updatedResources.iron += accepted;
+    if (itemId === 'titanium_alloy') updatedResources.titanium += accepted;
+    if (itemId === 'plasma_core') updatedResources.plasma += accepted;
+
+    set({
       inventory: { ...state.inventory, [itemId]: newCount },
       resources: updatedResources,
+      backpackLimitAlert: null,
       recentCollectedItem: {
         id: itemId,
         name: itemId,
-        amount,
+        amount: accepted,
         timestamp: Date.now(),
       },
-    };
-  }),
+    });
+    return true;
+  },
   removeInventoryItem: (itemId: string, amount = 1) => {
     const state = get();
     const current = state.inventory[itemId] || 0;
     if (current < amount) return false;
+    const updatedResources = { ...state.resources };
+    if (itemId === 'iron_ore') updatedResources.iron = Math.max(0, updatedResources.iron - amount);
+    if (itemId === 'titanium_alloy') updatedResources.titanium = Math.max(0, updatedResources.titanium - amount);
+    if (itemId === 'plasma_core') updatedResources.plasma = Math.max(0, updatedResources.plasma - amount);
     set({
       inventory: { ...state.inventory, [itemId]: current - amount },
+      resources: updatedResources,
     });
     return true;
   },
@@ -848,42 +985,100 @@ export const useGameStore = create<GameState>((set, get) => ({
     return state;
   }),
   
-  loadExoplanets: async () => {
-try {
-let data;
+  loadExoplanets: (() => {
+    let inflightOrDone: Promise<void> | null = null;
+    return async () => {
+      if (inflightOrDone) return inflightOrDone;
+      inflightOrDone = (async () => {
+        try {
+      // 1. Live Solar System OpenData API enrichment (density, gravity, radius, avgTemp) with safe fallback
       try {
-        const query = "select pl_name,pl_rade,pl_bmasse,sy_dist,st_teff,discoverymethod,disc_year,pl_eqt from ps where default_flag=1 and pl_name in ('TRAPPIST-1 d','TRAPPIST-1 e','TRAPPIST-1 f','Kepler-186 f','Proxima Cen b','K2-18 b','Kepler-452 b','Kepler-22 b','LHS 1140 b','WASP-12 b')&format=json";
-        const url = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=" + encodeURIComponent(query).replace(/%20/g, '+');
-        // Try with corsproxy to avoid CORS issues
-        const response = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url));
-        if (!response.ok) throw new Error("Fetch failed");
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 4500);
+        const solarRes = await fetch(
+          'https://api.le-systeme-solaire.net/rest/bodies?data=id,englishName,gravity,density,meanRadius,avgTemp',
+          { signal: controller.signal }
+        );
+        window.clearTimeout(timer);
+        if (solarRes.ok) {
+          const solarJson = await solarRes.json();
+          const bodies: Array<{ id?: string; englishName?: string; gravity?: number; density?: number; meanRadius?: number; avgTemp?: number }> =
+            Array.isArray(solarJson?.bodies) ? solarJson.bodies : [];
+          const bodyMap = new Map<string, (typeof bodies)[number]>();
+          for (const b of bodies) {
+            if (b.englishName) bodyMap.set(b.englishName.toLowerCase(), b);
+            if (b.id) bodyMap.set(b.id.toLowerCase(), b);
+          }
+          const solarMapping: Record<string, string> = {
+            earth: 'earth',
+            moon: 'moon',
+            mercury: 'mercury',
+            venus: 'venus',
+            mars: 'mars',
+            jupiter: 'jupiter',
+            saturn: 'saturn',
+            uranus: 'uranus',
+            neptune: 'neptune',
+            titan: 'titan',
+          };
+          for (const planet of PLANETS) {
+            const key = solarMapping[planet.id];
+            if (!key) continue;
+            const apiBody = bodyMap.get(key);
+            if (apiBody) {
+              if (typeof apiBody.gravity === 'number' && apiBody.gravity > 0) planet.gravity = parseFloat(apiBody.gravity.toFixed(2));
+              if (typeof apiBody.density === 'number' && apiBody.density > 0) planet.density = parseFloat(apiBody.density.toFixed(2));
+              if (typeof apiBody.avgTemp === 'number' && apiBody.avgTemp > 0) planet.temperature = apiBody.avgTemp;
+              if (typeof apiBody.meanRadius === 'number' && apiBody.meanRadius > 0) {
+                planet.radius = parseFloat((apiBody.meanRadius / 6371).toFixed(3));
+              }
+              planet.apiSource = 'Solar System OpenData';
+            }
+          }
+        }
+      } catch {
+        // Keep bundled NASA Fact Sheet physical telemetry silently if Solar System API requires key/network
+      }
+
+      // 2. Live NASA Exoplanet Archive TAP API (Caltech) with density, insolation, temperature, mass & radius
+      let data;
+      try {
+        const query =
+          "select pl_name,pl_rade,pl_bmasse,pl_dens,pl_insol,sy_dist,st_teff,discoverymethod,disc_year,pl_eqt from ps where default_flag=1 and pl_name in ('TRAPPIST-1 d','TRAPPIST-1 e','TRAPPIST-1 f','Kepler-186 f','Proxima Cen b','K2-18 b','Kepler-452 b','Kepler-22 b','LHS 1140 b','WASP-12 b')&format=json";
+        const url = 'https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=' + encodeURIComponent(query).replace(/%20/g, '+');
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 5000);
+        const response = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), {
+          signal: controller.signal,
+        });
+        window.clearTimeout(timer);
+        if (!response.ok) throw new Error('Fetch failed');
         data = await response.json();
-      } catch (err) {
-        console.warn("Failed to fetch from NASA via proxy, using fallback static data.", err);
-        // Fallback static dataset in case of CORS or network error
+      } catch {
         data = [
-          {"pl_name": "TRAPPIST-1 d","pl_rade": 0.788,"pl_bmasse": 0.388,"sy_dist": 12.1,"st_teff": 2566,"discoverymethod": "Transit","disc_year": 2016},
-          {"pl_name": "TRAPPIST-1 e","pl_rade": 0.920,"pl_bmasse": 0.692,"sy_dist": 12.1,"st_teff": 2566,"discoverymethod": "Transit","disc_year": 2017},
-          {"pl_name": "TRAPPIST-1 f","pl_rade": 1.045,"pl_bmasse": 1.039,"sy_dist": 12.1,"st_teff": 2566,"discoverymethod": "Transit","disc_year": 2017},
-          {"pl_name": "K2-18 b","pl_rade": 2.370,"pl_bmasse": 8.920,"sy_dist": 38.0,"st_teff": 3457,"discoverymethod": "Transit","disc_year": 2015},
-          {"pl_name": "LHS 1140 b","pl_rade": 1.730,"pl_bmasse": 5.600,"sy_dist": 14.9,"st_teff": 3096,"discoverymethod": "Transit","disc_year": 2017},
-          {"pl_name": "WASP-12 b","pl_rade": 22.0,"pl_bmasse": 450,"sy_dist": 427.2,"st_teff": 6265,"discoverymethod": "Transit","disc_year": 2008},
-          {"pl_name": "Kepler-186 f","pl_rade": 1.170,"pl_bmasse": null,"sy_dist": 177.5,"st_teff": 3755,"discoverymethod": "Transit","disc_year": 2014},
-          {"pl_name": "Proxima Cen b","pl_rade": null,"pl_bmasse": 1.055,"sy_dist": 1.3,"st_teff": 2900,"discoverymethod": "Radial Velocity","disc_year": 2016},
-          {"pl_name": "Kepler-452 b","pl_rade": 1.630,"pl_bmasse": null,"sy_dist": 551.7,"st_teff": 5757,"discoverymethod": "Transit","disc_year": 2015},
-          {"pl_name": "Kepler-22 b","pl_rade": 2.100,"pl_bmasse": 9.100,"sy_dist": 194.6,"st_teff": 5596,"discoverymethod": "Transit","disc_year": 2011}
+          { pl_name: 'TRAPPIST-1 d', pl_rade: 0.788, pl_bmasse: 0.388, pl_dens: 4.35, pl_insol: 1.11, sy_dist: 12.1, st_teff: 2566, discoverymethod: 'Transit', disc_year: 2016, pl_eqt: 288 },
+          { pl_name: 'TRAPPIST-1 e', pl_rade: 0.92, pl_bmasse: 0.692, pl_dens: 4.9, pl_insol: 0.65, sy_dist: 12.1, st_teff: 2566, discoverymethod: 'Transit', disc_year: 2017, pl_eqt: 251 },
+          { pl_name: 'TRAPPIST-1 f', pl_rade: 1.045, pl_bmasse: 1.039, pl_dens: 5.02, pl_insol: 0.37, sy_dist: 12.1, st_teff: 2566, discoverymethod: 'Transit', disc_year: 2017, pl_eqt: 219 },
+          { pl_name: 'K2-18 b', pl_rade: 2.37, pl_bmasse: 8.92, pl_dens: 2.67, pl_insol: 1.05, sy_dist: 38.0, st_teff: 3457, discoverymethod: 'Transit', disc_year: 2015, pl_eqt: 284 },
+          { pl_name: 'LHS 1140 b', pl_rade: 1.73, pl_bmasse: 5.6, pl_dens: 5.9, pl_insol: 0.43, sy_dist: 14.9, st_teff: 3096, discoverymethod: 'Transit', disc_year: 2017, pl_eqt: 226 },
+          { pl_name: 'WASP-12 b', pl_rade: 22.0, pl_bmasse: 450, pl_dens: 0.26, pl_insol: 4500, sy_dist: 427.2, st_teff: 6265, discoverymethod: 'Transit', disc_year: 2008, pl_eqt: 2580 },
+          { pl_name: 'Kepler-186 f', pl_rade: 1.17, pl_bmasse: 1.71, pl_dens: 5.1, pl_insol: 0.29, sy_dist: 177.5, st_teff: 3755, discoverymethod: 'Transit', disc_year: 2014, pl_eqt: 188 },
+          { pl_name: 'Proxima Cen b', pl_rade: 1.07, pl_bmasse: 1.055, pl_dens: 4.8, pl_insol: 0.65, sy_dist: 1.3, st_teff: 2900, discoverymethod: 'Radial Velocity', disc_year: 2016, pl_eqt: 234 },
+          { pl_name: 'Kepler-452 b', pl_rade: 1.63, pl_bmasse: 5.0, pl_dens: 6.3, pl_insol: 1.1, sy_dist: 551.7, st_teff: 5757, discoverymethod: 'Transit', disc_year: 2015, pl_eqt: 265 },
+          { pl_name: 'Kepler-22 b', pl_rade: 2.1, pl_bmasse: 9.1, pl_dens: 4.9, pl_insol: 1.09, sy_dist: 194.6, st_teff: 5596, discoverymethod: 'Transit', disc_year: 2011, pl_eqt: 279 },
         ];
       }
-      
+
       const newPlanets: PlanetInfo[] = [];
       const colors = ['#2b6cb0', '#805ad5', '#c53030', '#d69e2e', '#38a169', '#319795', '#d53f8c', '#e53e3e', '#718096', '#ecc94b'];
-      
-      for(let i = 0; i < data.length; i++) {
+
+      for (let i = 0; i < data.length; i++) {
         const item = data[i];
         const radius = item.pl_rade || 1;
-        const mass = item.pl_bmasse || (radius * radius * radius); // rough estimate if missing
+        const mass = item.pl_bmasse || radius * radius * radius;
         const gravity = Math.max(1, Math.min(25, 9.8 * (mass / (radius * radius))));
-        
+        const computedDensity = item.pl_dens || (5.51 * mass) / Math.max(0.2, radius * radius * radius);
+
         newPlanets.push({
           id: `exo_${i}`,
           name: item.pl_name,
@@ -893,21 +1088,29 @@ let data;
           distance: item.sy_dist,
           mass: item.pl_bmasse,
           radius: item.pl_rade,
+          density: parseFloat(Number(computedDensity).toFixed(2)),
+          insolation: item.pl_insol,
           discoveryMethod: item.discoverymethod,
           discoveryYear: item.disc_year,
-          temperature: item.pl_eqt || (item.st_teff ? item.st_teff * 0.1 : null) // rough estimate if pl_eqt missing
+          temperature: item.pl_eqt || (item.st_teff ? item.st_teff * 0.1 : 260),
+          apiSource: 'NASA Exoplanet Archive',
         });
       }
-      
-      const existingIds = new Set(PLANETS.map(p => p.name));
-      const additions = newPlanets.filter(p => !existingIds.has(p.name));
+
+      const existingIds = new Set(PLANETS.map((p) => p.name));
+      const additions = newPlanets.filter((p) => !existingIds.has(p.name));
       if (additions.length > 0) {
         PLANETS.push(...additions);
-        // Force a state update to trigger re-renders by incrementing a generic counter or resetting a state variable
-        set((state) => ({ planetIndex: state.planetIndex }));
       }
+      set((state) => ({
+        planetIndex: state.planetIndex,
+        planetaryApiVersion: state.planetaryApiVersion + 1,
+      }));
     } catch (e) {
-      console.error("Failed to load NASA exoplanets", e);
+      console.error('Failed to load planetary API telemetry', e);
     }
-  }
+      })();
+      return inflightOrDone;
+    };
+  })(),
 }));

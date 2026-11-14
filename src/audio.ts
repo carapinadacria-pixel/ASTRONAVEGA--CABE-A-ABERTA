@@ -1,17 +1,24 @@
 import { useGameStore } from './store';
 
 // ============================================================================
-// PROCEDURAL AUDIO ENGINE - ZERO EXTERNAL MP3 DEPENDENCY
-// 100% Web Audio API Synthesis:
-// - Sons da Natureza (Vento costeiro, brisa ambiente)
-// - Sons do Mar (Ondas quebrando, refluxo na areia, modulação espacial)
-// - Máquinas a Trabalhar (Geradores industriais, compressores hidráulicos no VAB)
-// - Caminhada / Movimentação (Passos na areia, relva, metal e água + saltos)
+// PROCEDURAL + ORCHESTRAL AUDIO ENGINE
 // ============================================================================
 
 let audioCtx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
+let sfxGain: GainNode | null = null;
+let presenceSfxGain: GainNode | null = null;
 let isAudioEnabled = true;
+let musicVolume = 0.85;
+let sfxVolume = 0.05;
+
+const MP3_TRACK_SRCS: Partial<Record<MusicMode, string>> = {
+  beethoven_op68: '/assets/aistudio/Ludwig_Van_Beethoven__Symphony_No._5__Op._68_39cc117a.mp3',
+  epic: '/assets/aistudio/Beethoven__Symphony_No._9_in_D_Minor__Op._125__Choral___II._Scherzo._Molto_vivace___Presto_2_61786a6e.mp3',
+  tactical: '/assets/aistudio/Drill_No_Duro_2_28525b67.mp3',
+};
+let mp3Audio: HTMLAudioElement | null = null;
+let activeMp3Src: string | null = null;
 
 // Continuous Ambient Nodes
 let natureGain: GainNode | null = null;
@@ -35,17 +42,113 @@ let carBrakeFilter: BiquadFilterNode | null = null;
 let currentEnvScene: 'surface' | 'space' | 'silent' = 'silent';
 let currentEnvPlanetIndex = 0;
 
-// Procedural Music Engine (Menu Suspense + In-Game Selectable Tracks)
-export type MusicMode = 'silent' | 'menu_suspense' | 'epic' | 'orbital' | 'tactical';
+// Hybrid Music Engine (Real MP3 Tracks: Beethoven Op.68 / Op.125 / Drill + Procedural Orbital)
+export type MusicMode = 'silent' | 'beethoven_op68' | 'epic' | 'orbital' | 'tactical';
 let musicGain: GainNode | null = null;
 let currentMusicMode: MusicMode = 'silent';
 let musicTimerId: number | null = null;
 let musicStepIndex = 0;
 let activeDroneNodes: { stop: () => void }[] = [];
 
+// Continuous Rocket Propulsion & Liftoff Roar Nodes
+let rocketMasterGain: GainNode | null = null;
+let rocketSubOsc1: OscillatorNode | null = null;
+let rocketSubOsc2: OscillatorNode | null = null;
+let rocketSubFilter: BiquadFilterNode | null = null;
+let rocketTurbopumpOsc: OscillatorNode | null = null;
+let rocketTurbopumpGain: GainNode | null = null;
+let rocketRoarFilter: BiquadFilterNode | null = null;
+let rocketRoarGain: GainNode | null = null;
+let rocketCrackleFilter: BiquadFilterNode | null = null;
+let rocketCrackleGain: GainNode | null = null;
+
 // Footstep cadence timing & alternating left/right stride pitch variation
 let lastFootstepTime = 0;
 let footstepAlternate = false;
+
+function getTargetMusicBusVol(mode: MusicMode): number {
+  if (mode !== 'orbital') return 0.0;
+  return 0.30;
+}
+
+function getPresenceSfxBusGain(vol: number): number {
+  if (vol <= 0.001) return 0.0;
+  // Keeps footsteps and rocket launch crisp and clearly audible even at the 5% SFX default
+  return Math.min(1.0, 0.36 + vol * 0.64);
+}
+
+function getSfxOutput(ctx: AudioContext): AudioNode {
+  return sfxGain || masterGain || ctx.destination;
+}
+
+function getPresenceSfxOutput(ctx: AudioContext): AudioNode {
+  return presenceSfxGain || sfxGain || masterGain || ctx.destination;
+}
+
+function syncMp3MusicTrack() {
+  if (typeof window === 'undefined' || typeof Audio === 'undefined') return;
+  const targetSrc = MP3_TRACK_SRCS[currentMusicMode];
+  const shouldPlay = Boolean(targetSrc) && isAudioEnabled;
+
+  if (!shouldPlay || !targetSrc) {
+    if (mp3Audio) {
+      try {
+        mp3Audio.pause();
+        mp3Audio.currentTime = 0;
+      } catch {
+        // Ignore pause errors
+      }
+    }
+    return;
+  }
+
+  if (!mp3Audio) {
+    mp3Audio = new Audio(targetSrc);
+    mp3Audio.loop = true;
+    mp3Audio.preload = 'auto';
+    activeMp3Src = targetSrc;
+  } else if (activeMp3Src !== targetSrc) {
+    try {
+      mp3Audio.pause();
+    } catch {
+      // Ignore pause errors
+    }
+    mp3Audio.src = targetSrc;
+    mp3Audio.currentTime = 0;
+    mp3Audio.loop = true;
+    activeMp3Src = targetSrc;
+  }
+
+  mp3Audio.volume = Math.max(0, Math.min(1, musicVolume * 0.78));
+  if (mp3Audio.paused) {
+    const p = mp3Audio.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => {
+        // Browser autoplay blocked until user gesture
+      });
+    }
+  }
+}
+
+export function setMusicVolumeLevel(vol: number) {
+  musicVolume = Math.max(0, Math.min(1, vol));
+  if (mp3Audio) {
+    mp3Audio.volume = Math.max(0, Math.min(1, musicVolume * 0.78));
+  }
+  if (musicGain && audioCtx) {
+    musicGain.gain.setTargetAtTime(getTargetMusicBusVol(currentMusicMode) * musicVolume, audioCtx.currentTime, 0.05);
+  }
+}
+
+export function setSfxVolumeLevel(vol: number) {
+  sfxVolume = Math.max(0, Math.min(1, vol));
+  if (sfxGain && audioCtx) {
+    sfxGain.gain.setTargetAtTime(sfxVolume, audioCtx.currentTime, 0.05);
+  }
+  if (presenceSfxGain && audioCtx) {
+    presenceSfxGain.gain.setTargetAtTime(getPresenceSfxBusGain(sfxVolume), audioCtx.currentTime, 0.05);
+  }
+}
 
 export function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -74,9 +177,19 @@ function startProceduralAmbience(ctx: AudioContext) {
   masterGain.gain.setValueAtTime(isAudioEnabled ? 1.0 : 0.0, now);
   masterGain.connect(ctx.destination);
 
+  // Dedicated SFX & Ambience Bus Gain
+  sfxGain = ctx.createGain();
+  sfxGain.gain.setValueAtTime(sfxVolume, now);
+  sfxGain.connect(masterGain);
+
+  // Dedicated Presence Bus for Footsteps, Running & Rocket Liftoff (clear even at 5% SFX)
+  presenceSfxGain = ctx.createGain();
+  presenceSfxGain.gain.setValueAtTime(getPresenceSfxBusGain(sfxVolume), now);
+  presenceSfxGain.connect(masterGain);
+
   // Dedicated Music Bus Gain (connects through masterGain so global mute respects music)
   musicGain = ctx.createGain();
-  musicGain.gain.setValueAtTime(currentMusicMode === 'silent' ? 0.0 : 0.34, now);
+  musicGain.gain.setValueAtTime(getTargetMusicBusVol(currentMusicMode) * musicVolume, now);
   musicGain.connect(masterGain);
 
   // Buffer with pink-filtered noise for natural organic wind, waves & brake friction (4 seconds loop)
@@ -119,7 +232,7 @@ function startProceduralAmbience(ctx: AudioContext) {
 
   natureSource.connect(natureFilter);
   natureFilter.connect(natureGain);
-  natureGain.connect(masterGain);
+  natureGain.connect(sfxGain);
   natureSource.start();
 
   // --- B. OCEAN SURF SOUND (Ondas do Mar - Strictly Terra Only!) ---
@@ -154,7 +267,7 @@ function startProceduralAmbience(ctx: AudioContext) {
   oceanSource.connect(oceanFilter);
   oceanFilter.connect(oceanGain);
   subSwellGain.connect(oceanGain);
-  oceanGain.connect(masterGain);
+  oceanGain.connect(sfxGain);
   oceanSource.start();
 
   // --- C. WORKING MACHINERY SOUND (Máquinas VAB & Launchpad - Terra Only!) ---
@@ -184,7 +297,7 @@ function startProceduralAmbience(ctx: AudioContext) {
   osc2.connect(machFilter);
   machFilter.connect(machineGain);
   compressorGain.connect(machineGain);
-  machineGain.connect(masterGain);
+  machineGain.connect(sfxGain);
   osc1.start();
   osc2.start();
 
@@ -234,7 +347,7 @@ function startProceduralAmbience(ctx: AudioContext) {
   spacePadOsc2.connect(spaceFilter);
   spaceFilter.connect(spaceGain);
   spaceWindGain.connect(spaceGain);
-  spaceGain.connect(masterGain);
+  spaceGain.connect(sfxGain);
   spaceSubOsc.start();
   spacePadOsc1.start();
   spacePadOsc2.start();
@@ -268,7 +381,7 @@ function startProceduralAmbience(ctx: AudioContext) {
   carEngineOsc1.connect(carEngineFilter);
   carEngineOsc2.connect(carEngineFilter);
   carEngineFilter.connect(carEngineGain);
-  carEngineGain.connect(masterGain);
+  carEngineGain.connect(sfxGain);
   carEngineSubOsc.start();
   carEngineOsc1.start();
   carEngineOsc2.start();
@@ -288,7 +401,7 @@ function startProceduralAmbience(ctx: AudioContext) {
 
   tireNoiseSrc.connect(carTireFilter);
   carTireFilter.connect(carTireGain);
-  carTireGain.connect(masterGain);
+  carTireGain.connect(sfxGain);
   tireNoiseSrc.start();
 
   // Brake Disc Friction Hiss
@@ -306,8 +419,109 @@ function startProceduralAmbience(ctx: AudioContext) {
 
   brakeNoiseSrc.connect(carBrakeFilter);
   carBrakeFilter.connect(carBrakeGain);
-  carBrakeGain.connect(masterGain);
+  carBrakeGain.connect(sfxGain);
   brakeNoiseSrc.start();
+
+  // --- F. CONTINUOUS ROCKET ENGINE PRE-IGNITION & LIFTOFF THRUST SYNTHESIS ---
+  rocketMasterGain = ctx.createGain();
+  rocketMasterGain.gain.setValueAtTime(0.0, now);
+  rocketMasterGain.connect(presenceSfxGain);
+
+  // 1. Deep Saturn-class Dual Sub-Bass Chamber Rumble
+  rocketSubOsc1 = ctx.createOscillator();
+  rocketSubOsc1.type = 'sawtooth';
+  rocketSubOsc1.frequency.setValueAtTime(38, now);
+
+  rocketSubOsc2 = ctx.createOscillator();
+  rocketSubOsc2.type = 'triangle';
+  rocketSubOsc2.frequency.setValueAtTime(57, now);
+
+  rocketSubFilter = ctx.createBiquadFilter();
+  rocketSubFilter.type = 'lowpass';
+  rocketSubFilter.frequency.setValueAtTime(105, now);
+  rocketSubFilter.Q.setValueAtTime(1.4, now);
+
+  const rocketSubGain = ctx.createGain();
+  rocketSubGain.gain.setValueAtTime(0.55, now);
+
+  rocketSubOsc1.connect(rocketSubFilter);
+  rocketSubOsc2.connect(rocketSubFilter);
+  rocketSubFilter.connect(rocketSubGain);
+  rocketSubGain.connect(rocketMasterGain);
+  rocketSubOsc1.start();
+  rocketSubOsc2.start();
+
+  // 2. Cryogenic Turbopump Spool-Up Harmonic
+  rocketTurbopumpOsc = ctx.createOscillator();
+  rocketTurbopumpOsc.type = 'sawtooth';
+  rocketTurbopumpOsc.frequency.setValueAtTime(135, now);
+
+  const turbopumpBand = ctx.createBiquadFilter();
+  turbopumpBand.type = 'bandpass';
+  turbopumpBand.frequency.setValueAtTime(580, now);
+  turbopumpBand.Q.setValueAtTime(2.6, now);
+
+  rocketTurbopumpGain = ctx.createGain();
+  rocketTurbopumpGain.gain.setValueAtTime(0.0, now);
+
+  rocketTurbopumpOsc.connect(turbopumpBand);
+  turbopumpBand.connect(rocketTurbopumpGain);
+  rocketTurbopumpGain.connect(rocketMasterGain);
+  rocketTurbopumpOsc.start();
+
+  // 3. Thunderous Exhaust Jet Plume Roar
+  const rocketRoarSrc = ctx.createBufferSource();
+  rocketRoarSrc.buffer = noiseBuffer;
+  rocketRoarSrc.loop = true;
+
+  rocketRoarFilter = ctx.createBiquadFilter();
+  rocketRoarFilter.type = 'lowpass';
+  rocketRoarFilter.frequency.setValueAtTime(380, now);
+  rocketRoarFilter.Q.setValueAtTime(0.9, now);
+
+  const roarLfo = ctx.createOscillator();
+  roarLfo.frequency.setValueAtTime(6.5, now);
+  const roarLfoGain = ctx.createGain();
+  roarLfoGain.gain.setValueAtTime(110, now);
+  roarLfo.connect(roarLfoGain);
+  roarLfoGain.connect(rocketRoarFilter.frequency);
+  roarLfo.start();
+
+  rocketRoarGain = ctx.createGain();
+  rocketRoarGain.gain.setValueAtTime(0.82, now);
+
+  rocketRoarSrc.connect(rocketRoarFilter);
+  rocketRoarFilter.connect(rocketRoarGain);
+  rocketRoarGain.connect(rocketMasterGain);
+  rocketRoarSrc.start();
+
+  // 4. Supersonic Exhaust Acoustic Crackle (signature rocket liftoff crackle)
+  const rocketCrackleSrc = ctx.createBufferSource();
+  rocketCrackleSrc.buffer = noiseBuffer;
+  rocketCrackleSrc.loop = true;
+  rocketCrackleSrc.playbackRate.setValueAtTime(1.45, now);
+
+  rocketCrackleFilter = ctx.createBiquadFilter();
+  rocketCrackleFilter.type = 'bandpass';
+  rocketCrackleFilter.frequency.setValueAtTime(2450, now);
+  rocketCrackleFilter.Q.setValueAtTime(1.15, now);
+
+  rocketCrackleGain = ctx.createGain();
+  rocketCrackleGain.gain.setValueAtTime(0.0, now);
+
+  const crackleModOsc = ctx.createOscillator();
+  crackleModOsc.type = 'square';
+  crackleModOsc.frequency.setValueAtTime(21, now);
+  const crackleModGain = ctx.createGain();
+  crackleModGain.gain.setValueAtTime(0.18, now);
+  crackleModOsc.connect(crackleModGain);
+  crackleModGain.connect(rocketCrackleGain.gain);
+  crackleModOsc.start();
+
+  rocketCrackleSrc.connect(rocketCrackleFilter);
+  rocketCrackleFilter.connect(rocketCrackleGain);
+  rocketCrackleGain.connect(rocketMasterGain);
+  rocketCrackleSrc.start();
 }
 
 export function setAudioEnvironment(scene: 'surface' | 'space' | 'silent', planetIndex: number) {
@@ -325,6 +539,7 @@ export function setAudioEnvironment(scene: 'surface' | 'space' | 'silent', plane
     if (carEngineGain) carEngineGain.gain.setTargetAtTime(0.0, now, 0.03);
     if (carTireGain) carTireGain.gain.setTargetAtTime(0.0, now, 0.03);
     if (carBrakeGain) carBrakeGain.gain.setTargetAtTime(0.0, now, 0.03);
+    if (rocketMasterGain) rocketMasterGain.gain.setTargetAtTime(0.0, now, 0.04);
     return;
   }
 
@@ -418,6 +633,71 @@ export function updateCarAudio(
   }
 }
 
+export function updateRocketLaunchAudio(
+  active: boolean,
+  phase: 'idle' | 'preignition' | 'liftoff' | 'planetary',
+  intensity = 1.0
+) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  if (active && !ambientStarted) {
+    startProceduralAmbience(ctx);
+  }
+  if (!ambientStarted || !rocketMasterGain) return;
+
+  const now = ctx.currentTime;
+  if (!active || phase === 'idle' || !isAudioEnabled) {
+    rocketMasterGain.gain.setTargetAtTime(0.0, now, 0.09);
+    return;
+  }
+
+  const clamped = Math.max(0.15, Math.min(1.0, intensity));
+
+  if (phase === 'preignition') {
+    // Spooling cryogenic turbopumps & growing ignition flame trench roar (T-2.2s -> T-0)
+    const spool = clamped;
+    rocketMasterGain.gain.setTargetAtTime(0.18 + spool * 0.44, now, 0.08);
+    if (rocketSubOsc1) rocketSubOsc1.frequency.setTargetAtTime(34 + spool * 10, now, 0.08);
+    if (rocketSubOsc2) rocketSubOsc2.frequency.setTargetAtTime(51 + spool * 15, now, 0.08);
+    if (rocketSubFilter) rocketSubFilter.frequency.setTargetAtTime(85 + spool * 95, now, 0.08);
+    if (rocketTurbopumpOsc) rocketTurbopumpOsc.frequency.setTargetAtTime(115 + spool * 95, now, 0.08);
+    if (rocketTurbopumpGain) rocketTurbopumpGain.gain.setTargetAtTime(0.08 + spool * 0.14, now, 0.06);
+    if (rocketRoarFilter) rocketRoarFilter.frequency.setTargetAtTime(220 + spool * 580, now, 0.08);
+    if (rocketRoarGain) rocketRoarGain.gain.setTargetAtTime(0.55 + spool * 0.35, now, 0.08);
+    if (rocketCrackleFilter) rocketCrackleFilter.frequency.setTargetAtTime(1950 + spool * 600, now, 0.08);
+    if (rocketCrackleGain) rocketCrackleGain.gain.setTargetAtTime(0.08 + spool * 0.22, now, 0.08);
+  } else if (phase === 'liftoff') {
+    // Full Saturn V / heavy booster liftoff roar + supersonic shockwave crackle
+    rocketMasterGain.gain.setTargetAtTime(0.72 * clamped + 0.22, now, 0.07);
+    if (rocketSubOsc1) rocketSubOsc1.frequency.setTargetAtTime(41 + (1 - clamped) * 8, now, 0.1);
+    if (rocketSubOsc2) rocketSubOsc2.frequency.setTargetAtTime(62 + (1 - clamped) * 12, now, 0.1);
+    if (rocketSubFilter) rocketSubFilter.frequency.setTargetAtTime(135 + clamped * 55, now, 0.1);
+    if (rocketTurbopumpOsc) rocketTurbopumpOsc.frequency.setTargetAtTime(185, now, 0.12);
+    if (rocketTurbopumpGain) rocketTurbopumpGain.gain.setTargetAtTime(0.07 * clamped, now, 0.12);
+    if (rocketRoarFilter) rocketRoarFilter.frequency.setTargetAtTime(520 + clamped * 920, now, 0.12);
+    if (rocketRoarGain) rocketRoarGain.gain.setTargetAtTime(0.95, now, 0.08);
+    if (rocketCrackleFilter) rocketCrackleFilter.frequency.setTargetAtTime(2550 + clamped * 850, now, 0.1);
+    if (rocketCrackleGain) rocketCrackleGain.gain.setTargetAtTime(0.32 * clamped, now, 0.08);
+  } else {
+    // Planetary capsule ascent thruster burn (tighter cryogenic roar)
+    rocketMasterGain.gain.setTargetAtTime(0.58 * clamped + 0.16, now, 0.08);
+    if (rocketSubOsc1) rocketSubOsc1.frequency.setTargetAtTime(48, now, 0.08);
+    if (rocketSubOsc2) rocketSubOsc2.frequency.setTargetAtTime(72, now, 0.08);
+    if (rocketSubFilter) rocketSubFilter.frequency.setTargetAtTime(160, now, 0.08);
+    if (rocketTurbopumpOsc) rocketTurbopumpOsc.frequency.setTargetAtTime(215, now, 0.1);
+    if (rocketTurbopumpGain) rocketTurbopumpGain.gain.setTargetAtTime(0.11, now, 0.08);
+    if (rocketRoarFilter) rocketRoarFilter.frequency.setTargetAtTime(680 + clamped * 640, now, 0.1);
+    if (rocketRoarGain) rocketRoarGain.gain.setTargetAtTime(0.84, now, 0.08);
+    if (rocketCrackleFilter) rocketCrackleFilter.frequency.setTargetAtTime(2200, now, 0.1);
+    if (rocketCrackleGain) rocketCrackleGain.gain.setTargetAtTime(0.18 * clamped, now, 0.08);
+  }
+}
+
+export function stopRocketLaunchAudio() {
+  if (!audioCtx || !rocketMasterGain) return;
+  rocketMasterGain.gain.setTargetAtTime(0.0, audioCtx.currentTime, 0.06);
+}
+
 // ----------------------------------------------------------------------------
 // 2. SPATIAL POSITION & ENVIRONMENT AUDIO UPDATES (useFrame reactive)
 // ----------------------------------------------------------------------------
@@ -426,7 +706,8 @@ export function updateSpatialAudio(
   isMoving: boolean,
   speed: number,
   isGrounded: boolean,
-  inWater: boolean
+  inWater: boolean,
+  isSprintingParam?: boolean
 ) {
   const ctx = getAudioContext();
   if (!ctx || !ambientStarted || !isAudioEnabled) return;
@@ -478,8 +759,8 @@ export function updateSpatialAudio(
 
   // Footstep Cadence Triggering (works across Earth and all planetary surfaces)
   if (currentEnvScene === 'surface' && isMoving && isGrounded && speed > 0.4) {
-    const isRunning = speed > 3.8;
-    const interval = inWater ? 0.62 : isRunning ? 0.29 : 0.44;
+    const isRunning = isSprintingParam !== undefined ? isSprintingParam && speed > 2.0 : speed > 8.5;
+    const interval = inWater ? (isRunning ? 0.34 : 0.54) : isRunning ? 0.255 : 0.475;
 
     if (performance.now() - lastFootstepTime > interval * 1000) {
       lastFootstepTime = performance.now();
@@ -524,67 +805,30 @@ export function updateSpatialAudio(
 }
 
 // ----------------------------------------------------------------------------
-// 3. CAMINHADA & MOVIMENTAÇÃO (Terrain-Defined Boots + Spacesuit Movement)
+// 3. CAMINHADA & CORRIDA REALISTA (Heel-to-Toe Gait + Terrain Grit + Gear)
 // ----------------------------------------------------------------------------
 export function playFootstepSound(surface: 'grass' | 'sand' | 'metal', isRunning: boolean) {
   const ctx = getAudioContext();
   if (!ctx || !isAudioEnabled) return;
+  if (!ambientStarted) startProceduralAmbience(ctx);
   const now = ctx.currentTime;
-  const out = masterGain || ctx.destination;
+  const out = getPresenceSfxOutput(ctx);
+
+  const st = useGameStore.getState();
+  const wearingSuit = st.gameMode === 'exploration' || st.hasSpacesuit;
 
   footstepAlternate = !footstepAlternate;
-  const stridePitch = footstepAlternate ? 1.04 : 0.96;
-  const strideGain = footstepAlternate ? 1.0 : 0.93;
+  const jitter = 0.96 + Math.random() * 0.08;
+  const stridePitch = (footstepAlternate ? 1.04 : 0.96) * jitter;
+  const strideGain = (footstepAlternate ? 1.0 : 0.92) * (0.93 + Math.random() * 0.12);
+  const runBoost = isRunning ? 1.42 : 1.0;
 
-  // 1. Weighted Boot Sole Impact Thud (present on every terrain, shaped to surface hardness)
-  const thumpOsc = ctx.createOscillator();
-  thumpOsc.type = surface === 'metal' ? 'triangle' : 'sine';
-  const startFreq = (surface === 'metal' ? 132 : surface === 'sand' ? 88 : 76) * stridePitch;
-  const endFreq = surface === 'metal' ? 44 : surface === 'sand' ? 34 : 30;
-  const thumpDur = surface === 'metal' ? 0.058 : 0.07;
-  thumpOsc.frequency.setValueAtTime(startFreq, now);
-  thumpOsc.frequency.exponentialRampToValueAtTime(endFreq, now + thumpDur);
-
-  const thumpGain = ctx.createGain();
-  const baseThumpVol =
-    surface === 'metal'
-      ? isRunning
-        ? 0.21
-        : 0.15
-      : surface === 'sand'
-      ? isRunning
-        ? 0.14
-        : 0.095
-      : isRunning
-      ? 0.13
-      : 0.085;
-  thumpGain.gain.setValueAtTime(baseThumpVol * strideGain, now);
-  thumpGain.gain.exponentialRampToValueAtTime(0.001, now + thumpDur);
-
-  thumpOsc.connect(thumpGain);
-  thumpGain.connect(out);
-  thumpOsc.start(now);
-  thumpOsc.stop(now + thumpDur);
-
-  // Subtle metallic deck resonance on metal pads/bases
-  if (surface === 'metal') {
-    const ringOsc = ctx.createOscillator();
-    ringOsc.type = 'sine';
-    ringOsc.frequency.setValueAtTime(245 * stridePitch, now);
-    const ringGain = ctx.createGain();
-    ringGain.gain.setValueAtTime((isRunning ? 0.065 : 0.04) * strideGain, now);
-    ringGain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
-    ringOsc.connect(ringGain);
-    ringGain.connect(out);
-    ringOsc.start(now);
-    ringOsc.stop(now + 0.065);
-  }
-
-  // Helper to spawn filtered noise bursts for surface grit & spacesuit flex
-  const triggerNoiseBurst = (
+  // Helper to spawn sculpted textured noise bursts for heel strike, toe roll & terrain crunch
+  const triggerNoiseLayer = (
     delaySec: number,
     durSec: number,
-    decayRatio: number,
+    attackSec: number,
+    decaySec: number,
     filterType: BiquadFilterType,
     freqStart: number,
     freqEnd: number,
@@ -595,9 +839,18 @@ export function playFootstepSound(surface: 'grass' | 'sand' | 'metal', isRunning
     const len = Math.max(128, Math.floor(ctx.sampleRate * durSec));
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const ch = buf.getChannelData(0);
+    // Pink-weighted grain noise with sharp organic attack + natural decay
+    let p0 = 0;
+    let p1 = 0;
     for (let i = 0; i < len; i++) {
-      const env = Math.exp(-i / (ctx.sampleRate * (durSec * decayRatio)));
-      ch[i] = (Math.random() * 2 - 1) * env;
+      const t = i / ctx.sampleRate;
+      const white = Math.random() * 2 - 1;
+      p0 = 0.95 * p0 + white * 0.22;
+      p1 = 0.72 * p1 + white * 0.35;
+      const grain = p0 * 0.55 + p1 * 0.45;
+      const atk = Math.min(1, t / Math.max(0.002, attackSec));
+      const dec = Math.exp(-t / Math.max(0.008, decaySec));
+      ch[i] = grain * atk * dec;
     }
 
     const src = ctx.createBufferSource();
@@ -607,7 +860,7 @@ export function playFootstepSound(surface: 'grass' | 'sand' | 'metal', isRunning
     flt.type = filterType;
     flt.frequency.setValueAtTime(freqStart, startAt);
     if (freqEnd !== freqStart) {
-      flt.frequency.linearRampToValueAtTime(freqEnd, startAt + durSec);
+      flt.frequency.exponentialRampToValueAtTime(Math.max(40, freqEnd), startAt + durSec);
     }
     flt.Q.setValueAtTime(qVal, startAt);
 
@@ -621,30 +874,80 @@ export function playFootstepSound(surface: 'grass' | 'sand' | 'metal', isRunning
     src.start(startAt);
   };
 
-  // 2. Terrain-Specific Surface Crunch / Tap
+  // PHASE 1: Heel Strike Low-End Boot Sole Weight (damped ground thud, stronger & punchier on sprint)
+  const heelOsc = ctx.createOscillator();
+  heelOsc.type = 'triangle';
+  const startFreq = (surface === 'metal' ? (isRunning ? 148 : 112) : surface === 'sand' ? 92 : 84) * stridePitch;
+  const endFreq = surface === 'metal' ? 46 : surface === 'sand' ? 34 : 31;
+  const heelDur = isRunning ? 0.062 : 0.088;
+  heelOsc.frequency.setValueAtTime(startFreq, now);
+  heelOsc.frequency.exponentialRampToValueAtTime(endFreq, now + heelDur);
+
+  const heelFilter = ctx.createBiquadFilter();
+  heelFilter.type = 'lowpass';
+  heelFilter.frequency.setValueAtTime(surface === 'metal' ? 320 : 195, now);
+
+  const heelGain = ctx.createGain();
+  const baseHeel =
+    (surface === 'metal' ? 0.34 : surface === 'sand' ? 0.25 : 0.22) *
+    (wearingSuit ? 1.08 : 0.9) *
+    runBoost;
+  heelGain.gain.setValueAtTime(baseHeel * strideGain, now);
+  heelGain.gain.exponentialRampToValueAtTime(0.001, now + heelDur);
+
+  heelOsc.connect(heelFilter);
+  heelFilter.connect(heelGain);
+  heelGain.connect(out);
+  heelOsc.start(now);
+  heelOsc.stop(now + heelDur);
+
+  // PHASE 2: Surface-Authentic Heel-to-Toe Texture
   if (surface === 'sand') {
-    // Primary heel sink + staggered toe push-off grit (beach sand & lunar/planetary regolith)
-    triggerNoiseBurst(0, 0.085, 0.42, 'bandpass', 540 * stridePitch, 460 * stridePitch, 1.35, isRunning ? 0.17 : 0.12);
-    triggerNoiseBurst(0.018, 0.075, 0.38, 'bandpass', 1120 * stridePitch, 960 * stridePitch, 1.6, isRunning ? 0.11 : 0.075);
+    // Crunchy granular heel compression followed by forefoot sand/regolith push-off
+    triggerNoiseLayer(0.0, 0.09, 0.006, 0.032, 'bandpass', 620 * stridePitch, 390 * stridePitch, 1.1, (isRunning ? 0.34 : 0.22));
+    triggerNoiseLayer(isRunning ? 0.024 : 0.056, 0.085, 0.008, 0.028, 'bandpass', 1420 * stridePitch, 920 * stridePitch, 1.4, (isRunning ? 0.28 : 0.16));
+    if (isRunning) {
+      // High-velocity grit spray on sprint push-off
+      triggerNoiseLayer(0.038, 0.07, 0.005, 0.022, 'highpass', 2350 * stridePitch, 1800 * stridePitch, 0.8, 0.14);
+    }
   } else if (surface === 'metal') {
-    // Crisp high-definition boot heel clack on metallic grates/concrete
-    triggerNoiseBurst(0, 0.055, 0.28, 'bandpass', (isRunning ? 1480 : 1220) * stridePitch, 1050 * stridePitch, 3.5, isRunning ? 0.22 : 0.15);
+    // Crisp solid rubber-sole slap on Hangar / Launchpad floor + short steel/concrete floor body
+    triggerNoiseLayer(0.0, 0.052, 0.003, 0.016, 'bandpass', (isRunning ? 1580 : 1120) * stridePitch, 620 * stridePitch, 1.9, (isRunning ? 0.38 : 0.24));
+    // Toe tap roll for natural two-step walking cadence
+    triggerNoiseLayer(isRunning ? 0.024 : 0.055, 0.045, 0.004, 0.014, 'bandpass', (isRunning ? 1950 : 1480) * stridePitch, 880 * stridePitch, 1.7, (isRunning ? 0.26 : 0.15));
+
+    // Subtle damped metallic floor resonance (never ringing like a bell)
+    const deckOsc = ctx.createOscillator();
+    deckOsc.type = 'sine';
+    deckOsc.frequency.setValueAtTime(192 * stridePitch, now);
+    deckOsc.frequency.exponentialRampToValueAtTime(118 * stridePitch, now + 0.05);
+    const deckGain = ctx.createGain();
+    deckGain.gain.setValueAtTime((isRunning ? 0.11 : 0.065) * strideGain, now);
+    deckGain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+    deckOsc.connect(deckGain);
+    deckGain.connect(out);
+    deckOsc.start(now);
+    deckOsc.stop(now + 0.058);
   } else {
-    // Grass & soft soil rustle
-    triggerNoiseBurst(0, 0.095, 0.45, 'lowpass', (isRunning ? 780 : 600) * stridePitch, 440 * stridePitch, 0.8, isRunning ? 0.16 : 0.105);
+    // Earth grass & coastal turf: soft soil compression + dry blade rustle on toe push-off
+    triggerNoiseLayer(0.0, 0.095, 0.008, 0.036, 'lowpass', (isRunning ? 880 : 640) * stridePitch, 320 * stridePitch, 0.9, (isRunning ? 0.30 : 0.19));
+    triggerNoiseLayer(isRunning ? 0.026 : 0.058, 0.08, 0.01, 0.03, 'bandpass', 1750 * stridePitch, 1150 * stridePitch, 1.1, (isRunning ? 0.21 : 0.12));
   }
 
-  // 3. Pressurized Spacesuit Beta-Cloth & Articulated Boot Flex Swish
-  triggerNoiseBurst(
-    0.012,
-    0.135,
-    0.52,
-    'bandpass',
-    920 * stridePitch,
-    1320 * stridePitch,
-    1.35,
-    isRunning ? 0.082 : 0.048
-  );
+  // PHASE 3: Gear / Beta-Cloth Suit Flex & Sprint Effort Rush
+  if (wearingSuit || isRunning) {
+    triggerNoiseLayer(
+      0.01,
+      isRunning ? 0.11 : 0.14,
+      0.015,
+      isRunning ? 0.045 : 0.06,
+      'bandpass',
+      (isRunning ? 740 : 540) * stridePitch,
+      (isRunning ? 1180 : 780) * stridePitch,
+      1.2,
+      isRunning ? (wearingSuit ? 0.13 : 0.09) : 0.055
+    );
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -666,7 +969,7 @@ export function playJumpSound() {
   gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
 
   osc.connect(gain);
-  gain.connect(masterGain || ctx.destination);
+  gain.connect(getSfxOutput(ctx));
   osc.start(now);
   osc.stop(now + 0.22);
 }
@@ -687,7 +990,7 @@ export function playLandSound() {
   gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
 
   osc.connect(gain);
-  gain.connect(masterGain || ctx.destination);
+  gain.connect(getSfxOutput(ctx));
   osc.start(now);
   osc.stop(now + 0.18);
 }
@@ -711,7 +1014,7 @@ export function playWaterSplashSound() {
   oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
 
   osc.connect(oscGain);
-  oscGain.connect(masterGain || ctx.destination);
+  oscGain.connect(getSfxOutput(ctx));
   osc.start(now);
   osc.stop(now + 0.24);
 
@@ -737,7 +1040,7 @@ export function playWaterSplashSound() {
 
   noise.connect(bandpass);
   bandpass.connect(noiseGain);
-  noiseGain.connect(masterGain || ctx.destination);
+  noiseGain.connect(getSfxOutput(ctx));
   noise.start(now);
 }
 
@@ -766,7 +1069,7 @@ export function playWaterWadeSound() {
 
   noise.connect(filter);
   filter.connect(gain);
-  gain.connect(masterGain || ctx.destination);
+  gain.connect(getSfxOutput(ctx));
   noise.start(now);
 }
 
@@ -800,7 +1103,7 @@ export function playDoorOpenSound() {
 
   noise.connect(bandpass);
   bandpass.connect(noiseGain);
-  noiseGain.connect(masterGain || ctx.destination);
+  noiseGain.connect(getSfxOutput(ctx));
   noise.start(now);
 
   // Motorized heavy door servo track
@@ -821,7 +1124,7 @@ export function playDoorOpenSound() {
 
   osc.connect(lowpass);
   lowpass.connect(motorGain);
-  motorGain.connect(masterGain || ctx.destination);
+  motorGain.connect(getSfxOutput(ctx));
   osc.start(now);
   osc.stop(now + 0.65);
 }
@@ -847,7 +1150,7 @@ export function playDoorCloseSound() {
 
   osc.connect(lowpass);
   lowpass.connect(motorGain);
-  motorGain.connect(masterGain || ctx.destination);
+  motorGain.connect(getSfxOutput(ctx));
   osc.start(now);
   osc.stop(now + 0.5);
 
@@ -863,7 +1166,7 @@ export function playDoorCloseSound() {
   subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
 
   subOsc.connect(subGain);
-  subGain.connect(masterGain || ctx.destination);
+  subGain.connect(getSfxOutput(ctx));
   subOsc.start(now + 0.42);
   subOsc.stop(now + 0.65);
 }
@@ -927,7 +1230,7 @@ function playMusicVoice(
 
 function startMusicSequencerForMode(mode: MusicMode) {
   stopMusicSequencer(false);
-  if (mode === 'silent') return;
+  if (mode !== 'orbital') return;
   const ctx = getAudioContext();
   if (!ctx) return;
   if (!ambientStarted) {
@@ -936,23 +1239,20 @@ function startMusicSequencerForMode(mode: MusicMode) {
   if (!musicGain) return;
 
   const now = ctx.currentTime;
-  const targetBusVol = mode === 'menu_suspense' ? 0.34 : mode === 'orbital' ? 0.28 : 0.32;
+  const targetBusVol = getTargetMusicBusVol(mode) * musicVolume;
   musicGain.gain.setTargetAtTime(targetBusVol, now, 0.25);
   musicStepIndex = 0;
 
-  // Continuous low harmonic bed drone tailored to the active track
+  // Continuous low harmonic bed drone for Orbital Drift
   const droneOsc = ctx.createOscillator();
   const droneFilter = ctx.createBiquadFilter();
   const droneGain = ctx.createGain();
-  droneOsc.type = mode === 'menu_suspense' ? 'sawtooth' : 'triangle';
-  droneOsc.frequency.setValueAtTime(
-    mode === 'menu_suspense' ? 36.71 : mode === 'epic' ? 65.41 : mode === 'orbital' ? 82.41 : 55.0,
-    now
-  );
+  droneOsc.type = 'triangle';
+  droneOsc.frequency.setValueAtTime(82.41, now);
   droneFilter.type = 'lowpass';
-  droneFilter.frequency.setValueAtTime(mode === 'menu_suspense' ? 125 : 180, now);
+  droneFilter.frequency.setValueAtTime(180, now);
   droneGain.gain.setValueAtTime(0.001, now);
-  droneGain.gain.linearRampToValueAtTime(mode === 'menu_suspense' ? 0.22 : 0.14, now + 0.8);
+  droneGain.gain.linearRampToValueAtTime(0.14, now + 0.8);
   droneOsc.connect(droneFilter);
   droneFilter.connect(droneGain);
   droneGain.connect(musicGain);
@@ -968,88 +1268,28 @@ function startMusicSequencerForMode(mode: MusicMode) {
     },
   });
 
-  const stepMs =
-    mode === 'menu_suspense' ? 460 : mode === 'epic' ? 360 : mode === 'orbital' ? 430 : 250;
+  const stepMs = 430;
 
   const tickStep = () => {
     if (!audioCtx || audioCtx.state !== 'running' || currentMusicMode !== mode) return;
     const step = musicStepIndex % 16;
     musicStepIndex += 1;
 
-    if (mode === 'menu_suspense') {
-      // Suspenseful minor/diminished cinematic tension (Dm -> Bb -> Gm7b5 -> A7sus4)
-      const bassRoots = [73.42, 73.42, 58.27, 55.0]; // D2, D2, Bb1, A1
-      const padChords = [
-        [146.83, 174.61, 220.0], // Dm
-        [146.83, 185.0, 233.08], // Tension aug/min swell
-        [116.54, 146.83, 174.61], // Bbmaj
-        [110.0, 155.56, 207.65], // A tritone/tension
-      ];
-      const bar = Math.floor(step / 4);
-      if (step % 4 === 0) {
-        playMusicVoice(audioCtx, bassRoots[bar], 1.75, 0.28, 'triangle', 190, 0.08);
-        padChords[bar].forEach((note, idx) => {
-          playMusicVoice(audioCtx, note, 1.85, 0.085, 'sawtooth', 420, 0.35, idx === 1 ? -6 : 6);
-        });
-      }
-      // Subtle radar sonar / suspense pulse
-      const suspenseMotif = [293.66, 0, 311.13, 0, 261.63, 0, 220.0, 0, 293.66, 0, 349.23, 0, 277.18, 0, 0, 220.0];
-      const ping = suspenseMotif[step];
-      if (ping > 0) {
-        playMusicVoice(audioCtx, ping, 0.85, 0.11, 'sine', 1600, 0.02);
-      }
-      // Heartbeat low thump on beats 0 and 2
-      if (step % 2 === 0) {
-        playMusicVoice(audioCtx, 52, 0.22, 0.16, 'sine', 120, 0.01);
-      }
-    } else if (mode === 'epic') {
-      // Uplifting Space Epic progression (C -> Am -> F -> G)
-      const bassNotes = [130.81, 110.0, 87.31, 98.0];
-      const chords = [
-        [261.63, 329.63, 392.0],
-        [220.0, 261.63, 329.63],
-        [174.61, 220.0, 261.63],
-        [196.0, 246.94, 293.66],
-      ];
-      const lead = [523.25, 0, 659.25, 587.33, 440.0, 0, 523.25, 493.88, 349.23, 440.0, 523.25, 0, 587.33, 493.88, 392.0, 0];
-      const bar = Math.floor(step / 4);
-      if (step % 4 === 0) {
-        playMusicVoice(audioCtx, bassNotes[bar], 1.4, 0.25, 'triangle', 260, 0.06);
-        chords[bar].forEach((n, i) => {
-          playMusicVoice(audioCtx, n, 1.5, 0.095, 'sawtooth', 780, 0.22, i % 2 === 0 ? -5 : 5);
-        });
-      }
-      const mel = lead[step];
-      if (mel > 0) {
-        playMusicVoice(audioCtx, mel, 0.65, 0.13, 'triangle', 2200, 0.03);
-      }
-    } else if (mode === 'orbital') {
-      // Serene Orbital Drift ambient arpeggios (Em9 -> Cmaj7 -> Gmaj7 -> Dadd9)
-      const arps = [
-        [164.81, 246.94, 329.63, 369.99],
-        [130.81, 196.0, 261.63, 329.63],
-        [196.0, 246.94, 293.66, 369.99],
-        [146.83, 220.0, 293.66, 329.63],
-      ];
-      const bar = Math.floor(step / 4);
-      const sub = step % 4;
-      if (sub === 0) {
-        playMusicVoice(audioCtx, arps[bar][0], 1.8, 0.18, 'sine', 300, 0.15);
-      }
-      playMusicVoice(audioCtx, arps[bar][sub] * 2, 1.15, 0.12, 'sine', 1800, 0.04);
-      if (sub === 2) {
-        playMusicVoice(audioCtx, arps[bar][1] * 2, 0.9, 0.07, 'triangle', 1200, 0.05);
-      }
-    } else if (mode === 'tactical') {
-      // Focused Mission Control Tactical Pulse (Am -> F -> Dm -> E)
-      const bassSeq = [110.0, 110.0, 87.31, 87.31, 73.42, 73.42, 82.41, 98.0];
-      const bassFreq = bassSeq[Math.floor(step / 2)];
-      playMusicVoice(audioCtx, bassFreq, 0.21, step % 2 === 0 ? 0.24 : 0.14, 'sawtooth', step % 2 === 0 ? 440 : 280, 0.01);
-
-      const arp = [440, 523.25, 659.25, 523.25, 349.23, 440, 523.25, 440, 293.66, 349.23, 440, 349.23, 329.63, 392.0, 493.88, 392.0];
-      if (step % 2 === 0 || step % 4 === 3) {
-        playMusicVoice(audioCtx, arp[step], 0.3, 0.095, 'square', 1100, 0.015);
-      }
+    // Serene Orbital Drift ambient arpeggios (Em9 -> Cmaj7 -> Gmaj7 -> Dadd9)
+    const arps = [
+      [164.81, 246.94, 329.63, 369.99],
+      [130.81, 196.0, 261.63, 329.63],
+      [196.0, 246.94, 293.66, 369.99],
+      [146.83, 220.0, 293.66, 329.63],
+    ];
+    const bar = Math.floor(step / 4);
+    const sub = step % 4;
+    if (sub === 0) {
+      playMusicVoice(audioCtx, arps[bar][0], 1.8, 0.18, 'sine', 300, 0.15);
+    }
+    playMusicVoice(audioCtx, arps[bar][sub] * 2, 1.15, 0.12, 'sine', 1800, 0.04);
+    if (sub === 2) {
+      playMusicVoice(audioCtx, arps[bar][1] * 2, 0.9, 0.07, 'triangle', 1200, 0.05);
     }
   };
 
@@ -1061,10 +1301,14 @@ export function setMusicMode(mode: MusicMode) {
   const modeChanged = currentMusicMode !== mode;
   currentMusicMode = mode;
 
-  if (mode === 'silent') {
+  if (mode === 'silent' || MP3_TRACK_SRCS[mode]) {
     stopMusicSequencer(true);
+    syncMp3MusicTrack();
     return;
   }
+
+  // Switching to procedural orbital track stops any playing MP3
+  syncMp3MusicTrack();
 
   const ctx = getAudioContext();
   if (!ctx) return;
@@ -1081,15 +1325,18 @@ export function getActiveMusicMode(): MusicMode {
 }
 
 export function initAudio() {
+  if (MP3_TRACK_SRCS[currentMusicMode]) {
+    syncMp3MusicTrack();
+  }
   const ctx = getAudioContext();
   if (!ctx) return;
   startProceduralAmbience(ctx);
-  if (currentMusicMode !== 'silent' && musicTimerId === null && ctx.state === 'running') {
-    startMusicSequencerForMode(currentMusicMode);
-  } else if (currentMusicMode !== 'silent' && ctx.state === 'suspended') {
+  if (currentMusicMode === 'orbital' && musicTimerId === null && ctx.state === 'running') {
+    startMusicSequencerForMode('orbital');
+  } else if (currentMusicMode === 'orbital' && ctx.state === 'suspended') {
     ctx.resume().then(() => {
-      if (currentMusicMode !== 'silent' && musicTimerId === null) {
-        startMusicSequencerForMode(currentMusicMode);
+      if (currentMusicMode === 'orbital' && musicTimerId === null) {
+        startMusicSequencerForMode('orbital');
       }
     }).catch(() => {});
   }
@@ -1100,11 +1347,12 @@ export function toggleAudio(): boolean {
   if (masterGain && audioCtx) {
     masterGain.gain.setTargetAtTime(isAudioEnabled ? 1.0 : 0.0, audioCtx.currentTime, 0.05);
   }
+  syncMp3MusicTrack();
   if (isAudioEnabled) {
     const ctx = getAudioContext();
     if (ctx && !ambientStarted) startProceduralAmbience(ctx);
-    if (currentMusicMode !== 'silent' && musicTimerId === null) {
-      startMusicSequencerForMode(currentMusicMode);
+    if (currentMusicMode === 'orbital' && musicTimerId === null) {
+      startMusicSequencerForMode('orbital');
     }
   } else {
     stopMissionVoice();
@@ -1138,7 +1386,7 @@ export function playCarCrashSound(impactSpeed = 8) {
 
   thudOsc.connect(thudFilter);
   thudFilter.connect(thudGain);
-  thudGain.connect(masterGain || ctx.destination);
+  thudGain.connect(getSfxOutput(ctx));
   thudOsc.start(now);
   thudOsc.stop(now + 0.28);
 
@@ -1165,7 +1413,7 @@ export function playCarCrashSound(impactSpeed = 8) {
 
   crunchSource.connect(crunchFilter);
   crunchFilter.connect(crunchGain);
-  crunchGain.connect(masterGain || ctx.destination);
+  crunchGain.connect(getSfxOutput(ctx));
   crunchSource.start(now);
 }
 
@@ -1209,29 +1457,41 @@ export function playCountdownVoice(step: 5 | 4 | 3 | 2 | 1 | 'liftoff', lang?: '
     gain.gain.setValueAtTime(0.22, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + (step === 'liftoff' ? 0.36 : 0.16));
     osc.connect(gain);
-    gain.connect(masterGain || ctx.destination);
+    gain.connect(getSfxOutput(ctx));
     osc.start(now);
     osc.stop(now + (step === 'liftoff' ? 0.36 : 0.16));
 
-    // Add deep liftoff engine roar burst on T-0
+    // Add mechanical hold-down clamp release clank + initial T-0 exhaust shockwave burst
     if (step === 'liftoff') {
-      const dur = 1.6;
+      const clampOsc = ctx.createOscillator();
+      clampOsc.type = 'square';
+      clampOsc.frequency.setValueAtTime(165, now);
+      clampOsc.frequency.exponentialRampToValueAtTime(48, now + 0.18);
+      const clampGain = ctx.createGain();
+      clampGain.gain.setValueAtTime(0.32, now);
+      clampGain.gain.exponentialRampToValueAtTime(0.001, now + 0.19);
+      clampOsc.connect(clampGain);
+      clampGain.connect(getPresenceSfxOutput(ctx));
+      clampOsc.start(now);
+      clampOsc.stop(now + 0.2);
+
+      const dur = 0.85;
       const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
       const ch = buf.getChannelData(0);
       for (let i = 0; i < ch.length; i++) {
-        const env = Math.sin(Math.min(1, i / (ctx.sampleRate * 0.25)) * Math.PI * 0.5) * Math.exp(-i / (ctx.sampleRate * 1.1));
+        const env = Math.sin(Math.min(1, i / (ctx.sampleRate * 0.04)) * Math.PI * 0.5) * Math.exp(-i / (ctx.sampleRate * 0.45));
         ch[i] = (Math.random() * 2 - 1) * env;
       }
       const src = ctx.createBufferSource();
       src.buffer = buf;
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
-      lp.frequency.setValueAtTime(320, now);
+      lp.frequency.setValueAtTime(540, now);
       const rg = ctx.createGain();
-      rg.gain.setValueAtTime(0.42, now);
+      rg.gain.setValueAtTime(0.55, now);
       src.connect(lp);
       lp.connect(rg);
-      rg.connect(masterGain || ctx.destination);
+      rg.connect(getPresenceSfxOutput(ctx));
       src.start(now);
     }
   }
@@ -1277,7 +1537,7 @@ export function playRefuelPumpSound() {
   gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
 
   osc.connect(gain);
-  gain.connect(masterGain || ctx.destination);
+  gain.connect(getSfxOutput(ctx));
   osc.start(now);
   osc.stop(now + 0.09);
 }
@@ -1304,7 +1564,7 @@ export function playRocketFlameoutSound() {
 
   osc.connect(lp);
   lp.connect(gain);
-  gain.connect(masterGain || ctx.destination);
+  gain.connect(getPresenceSfxOutput(ctx));
   osc.start(now);
   osc.stop(now + 1.45);
 
@@ -1317,7 +1577,7 @@ export function playRocketFlameoutSound() {
     bg.gain.setValueAtTime(0.12, now + offset);
     bg.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
     beep.connect(bg);
-    bg.connect(masterGain || ctx.destination);
+    bg.connect(getSfxOutput(ctx));
     beep.start(now + offset);
     beep.stop(now + offset + 0.14);
   });
@@ -1339,7 +1599,7 @@ export function playRocketSeaCrashSound() {
   impactGain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
 
   impactOsc.connect(impactGain);
-  impactGain.connect(masterGain || ctx.destination);
+  impactGain.connect(getPresenceSfxOutput(ctx));
   impactOsc.start(now);
   impactOsc.stop(now + 0.9);
 
@@ -1370,7 +1630,7 @@ export function playRocketSeaCrashSound() {
 
   splashSource.connect(splashFilter);
   splashFilter.connect(splashGain);
-  splashGain.connect(masterGain || ctx.destination);
+  splashGain.connect(getPresenceSfxOutput(ctx));
   splashSource.start(now);
 
   // 3. Spoken warning in Portuguese or English
@@ -1428,7 +1688,7 @@ export function playAstronautDeathSound() {
   ng.gain.exponentialRampToValueAtTime(0.001, now + dur);
   noise.connect(bp);
   bp.connect(ng);
-  ng.connect(masterGain || ctx.destination);
+  ng.connect(getSfxOutput(ctx));
   noise.start(now);
 
   // Descending alarm tones + heavy body impact thump
@@ -1445,7 +1705,7 @@ export function playAstronautDeathSound() {
     g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.26);
     osc.connect(lp);
     lp.connect(g);
-    g.connect(masterGain || ctx.destination);
+    g.connect(getSfxOutput(ctx));
     osc.start(now + offset);
     osc.stop(now + offset + 0.26);
   });
@@ -1460,7 +1720,7 @@ export function playAstronautDeathSound() {
   tg.gain.setValueAtTime(0.36, now + 0.55);
   tg.gain.exponentialRampToValueAtTime(0.001, now + 0.88);
   thud.connect(tg);
-  tg.connect(masterGain || ctx.destination);
+  tg.connect(getSfxOutput(ctx));
   thud.start(now + 0.55);
   thud.stop(now + 0.88);
 }
@@ -1493,7 +1753,7 @@ export function playSolarEvaporationSound() {
   ng.gain.exponentialRampToValueAtTime(0.001, now + dur);
   src.connect(bp);
   bp.connect(ng);
-  ng.connect(masterGain || ctx.destination);
+  ng.connect(getSfxOutput(ctx));
   src.start(now);
 
   // Sub-harmonic solar flare rumble
@@ -1510,7 +1770,7 @@ export function playSolarEvaporationSound() {
   og.gain.exponentialRampToValueAtTime(0.001, now + dur);
   osc.connect(lp);
   lp.connect(og);
-  og.connect(masterGain || ctx.destination);
+  og.connect(getSfxOutput(ctx));
   osc.start(now);
   osc.stop(now + dur);
 }
@@ -1541,7 +1801,7 @@ export function speakMissionTip(text: string, lang?: 'pt' | 'en') {
       gain.gain.setValueAtTime(0.08, now + i * 0.08);
       gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.09);
       osc.connect(gain);
-      gain.connect(masterGain || ctx.destination);
+      gain.connect(getSfxOutput(ctx));
       osc.start(now + i * 0.08);
       osc.stop(now + i * 0.08 + 0.09);
     });
@@ -1587,7 +1847,7 @@ export function playSuitEquipSound() {
     g.gain.setValueAtTime(0.24, now + offset);
     g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.08);
     osc.connect(g);
-    g.connect(masterGain || ctx.destination);
+    g.connect(getSfxOutput(ctx));
     osc.start(now + offset);
     osc.stop(now + offset + 0.08);
   });
@@ -1610,7 +1870,7 @@ export function playSuitEquipSound() {
   ng.gain.exponentialRampToValueAtTime(0.001, now + 0.18 + dur);
   src.connect(bp);
   bp.connect(ng);
-  ng.connect(masterGain || ctx.destination);
+  ng.connect(getSfxOutput(ctx));
   src.start(now + 0.18);
 }
 
@@ -1628,7 +1888,7 @@ export function playFlagPlantSound() {
   ig.gain.setValueAtTime(0.36, now);
   ig.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
   impact.connect(ig);
-  ig.connect(masterGain || ctx.destination);
+  ig.connect(getSfxOutput(ctx));
   impact.start(now);
   impact.stop(now + 0.28);
 
@@ -1640,9 +1900,83 @@ export function playFlagPlantSound() {
     g.gain.setValueAtTime(0.16, now + 0.18 + idx * 0.09);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.95 + idx * 0.09);
     osc.connect(g);
-    g.connect(masterGain || ctx.destination);
+    g.connect(getSfxOutput(ctx));
     osc.start(now + 0.18 + idx * 0.09);
     osc.stop(now + 0.98 + idx * 0.09);
+  });
+}
+
+export function playPickupChimeSound() {
+  const ctx = getAudioContext();
+  if (!ctx || !isAudioEnabled) return;
+  const now = ctx.currentTime;
+  const out = getSfxOutput(ctx);
+
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc1.type = 'sine';
+  osc2.type = 'triangle';
+
+  osc1.frequency.setValueAtTime(587.33, now);
+  osc1.frequency.exponentialRampToValueAtTime(1174.66, now + 0.18);
+
+  osc2.frequency.setValueAtTime(880.0, now);
+  osc2.frequency.exponentialRampToValueAtTime(1760.0, now + 0.22);
+
+  gain.gain.setValueAtTime(0.001, now);
+  gain.gain.linearRampToValueAtTime(0.25, now + 0.04);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(out);
+
+  osc1.start(now);
+  osc2.start(now);
+  osc1.stop(now + 0.45);
+  osc2.stop(now + 0.45);
+}
+
+export function playBaseBeepSound(isRefill = false) {
+  const ctx = getAudioContext();
+  if (!ctx || !isAudioEnabled) return;
+  const now = ctx.currentTime;
+  const out = getSfxOutput(ctx);
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = isRefill ? 'triangle' : 'sine';
+  osc.frequency.setValueAtTime(isRefill ? 523.25 : 659.25, now);
+  osc.frequency.exponentialRampToValueAtTime(isRefill ? 1046.5 : 1318.5, now + 0.22);
+  gain.gain.setValueAtTime(0.001, now);
+  gain.gain.linearRampToValueAtTime(0.18, now + 0.04);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+  osc.connect(gain);
+  gain.connect(out);
+  osc.start(now);
+  osc.stop(now + 0.36);
+}
+
+export function playBackpackLimitSound() {
+  const ctx = getAudioContext();
+  if (!ctx || !isAudioEnabled) return;
+  const now = ctx.currentTime;
+  const out = getSfxOutput(ctx);
+
+  [240, 180].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(freq, now + i * 0.09);
+    gain.gain.setValueAtTime(0.001, now + i * 0.09);
+    gain.gain.linearRampToValueAtTime(0.18, now + i * 0.09 + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.09 + 0.11);
+    osc.connect(gain);
+    gain.connect(out);
+    osc.start(now + i * 0.09);
+    osc.stop(now + i * 0.09 + 0.12);
   });
 }
 

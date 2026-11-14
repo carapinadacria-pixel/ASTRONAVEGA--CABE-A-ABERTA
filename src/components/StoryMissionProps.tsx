@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { Text } from '@react-three/drei';
-import { Group, MathUtils, DoubleSide } from 'three';
+import { Group, MathUtils, DoubleSide, MeshBasicMaterial } from 'three';
 import { useGameStore, livePlayerMotion } from '../store';
 import { AstronautCharacter } from './AstronautCharacter';
 import { playSuitEquipSound } from '../audio';
@@ -142,6 +142,7 @@ type CompanionAction = 'idle' | 'walk' | 'run' | 'jump' | 'swim' | 'treadWater' 
 
 export function StoryCompanion() {
   const gameMode = useGameStore((s) => s.gameMode);
+  const explorationWithCompanion = useGameStore((s) => s.explorationWithCompanion);
   const scene = useGameStore((s) => s.scene);
   const planetIndex = useGameStore((s) => s.planetIndex);
   const isLaunching = useGameStore((s) => s.isLaunching);
@@ -166,8 +167,9 @@ export function StoryCompanion() {
 
   useFrame((_, rawDelta) => {
     if (!groupRef.current) return;
-    const delta = Math.min(rawDelta, 0.05);
     const store = useGameStore.getState();
+    if (store.gameMode === 'exploration' && !store.explorationWithCompanion) return;
+    const delta = Math.min(rawDelta, 0.05);
     const pPos = store.playerPosition;
 
     // Reset companion position neatly beside player upon switching planets
@@ -387,7 +389,7 @@ export function StoryCompanion() {
     }
   });
 
-  if (scene !== 'surface' || isLaunching) return null;
+  if (scene !== 'surface' || isLaunching || (gameMode === 'exploration' && !explorationWithCompanion)) return null;
 
   return (
     <group ref={groupRef} position={posRef.current}>
@@ -544,3 +546,129 @@ export function MoonFlagMissionProp() {
     </group>
   );
 }
+
+interface FloorArrowPoint {
+  pos: [number, number, number];
+  rotY: number;
+}
+
+function FloorChevronArrow({
+  pos,
+  rotY,
+  index,
+  color = '#facc15',
+  scale = 1,
+}: {
+  pos: [number, number, number];
+  rotY: number;
+  index: number;
+  color?: string;
+  scale?: number;
+}) {
+  const grpRef = useRef<Group>(null);
+  const mat1Ref = useRef<MeshBasicMaterial>(null);
+  const mat2Ref = useRef<MeshBasicMaterial>(null);
+  const mat3Ref = useRef<MeshBasicMaterial>(null);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const wave = Math.max(0, Math.sin(t * 4.2 - index * 0.75));
+    const opacity = 0.28 + wave * 0.72;
+    if (grpRef.current) {
+      grpRef.current.position.y = pos[1] + wave * 0.035;
+    }
+    if (mat1Ref.current) mat1Ref.current.opacity = opacity;
+    if (mat2Ref.current) mat2Ref.current.opacity = opacity;
+    if (mat3Ref.current) mat3Ref.current.opacity = opacity * 0.35;
+  });
+
+  return (
+    <group ref={grpRef} position={pos} rotation={[0, rotY, 0]} scale={[scale, 1, scale]}>
+      {/* Ground glowing pad */}
+      <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.92, 20]} />
+        <meshBasicMaterial ref={mat3Ref} color={color} transparent opacity={0.25} />
+      </mesh>
+      {/* Left & Right Chevron Wings pointing along +Z */}
+      <mesh position={[-0.36, 0.02, -0.1]} rotation={[-Math.PI / 2, 0, -0.62]}>
+        <planeGeometry args={[0.26, 0.96]} />
+        <meshBasicMaterial ref={mat1Ref} color={color} transparent opacity={0.9} side={DoubleSide} />
+      </mesh>
+      <mesh position={[0.36, 0.02, -0.1]} rotation={[-Math.PI / 2, 0, 0.62]}>
+        <planeGeometry args={[0.26, 0.96]} />
+        <meshBasicMaterial ref={mat2Ref} color={color} transparent opacity={0.9} side={DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+export function AnimatedMissionFloorArrows() {
+  const gameMode = useGameStore((s) => s.gameMode);
+  const scene = useGameStore((s) => s.scene);
+  const planetIndex = useGameStore((s) => s.planetIndex);
+  const storyStep = useGameStore((s) => s.storyStep);
+  const hasSpacesuit = useGameStore((s) => s.hasSpacesuit);
+  const isLaunching = useGameStore((s) => s.isLaunching);
+  const isFlagPlantedOnMoon = useGameStore((s) => s.isFlagPlantedOnMoon);
+
+  const arrows = useMemo<FloorArrowPoint[]>(() => {
+    if (gameMode !== 'story' || scene !== 'surface' || isLaunching) return [];
+
+    // 1. Earth Hangar Spawn -> Spacesuit Table [248, 0.2, 12]
+    if (planetIndex === 0 && storyStep === 'hangar_suit_up' && !hasSpacesuit) {
+      const yaw = Math.atan2(SUIT_TABLE_POS[0] - 255, SUIT_TABLE_POS[2] - 5);
+      return [
+        { pos: [253.5, 0.22, 6.5], rotY: yaw },
+        { pos: [251.5, 0.22, 8.5], rotY: yaw },
+        { pos: [249.6, 0.22, 10.4], rotY: yaw },
+      ];
+    }
+
+    // 2. Earth Hangar / Suit Table -> Launch Pad (0, 0) along Crawlerway
+    if (planetIndex === 0 && storyStep === 'walk_to_rocket') {
+      const exitYaw = Math.atan2(-1, 0); // -PI/2 (-X West toward Pad)
+      const list: FloorArrowPoint[] = [
+        { pos: [236, 0.17, 7], rotY: Math.atan2(196 - 236, -7) },
+        { pos: [216, 0.17, 3.2], rotY: Math.atan2(196 - 216, -3.2) },
+        { pos: [196, 0.17, 0], rotY: exitYaw },
+      ];
+      for (let x = 174; x >= 20; x -= 22) {
+        list.push({ pos: [x, 0.17, 0], rotY: exitYaw });
+      }
+      return list;
+    }
+
+    // 3. Moon Landing Zone [0, 0.08, 9.5] -> Angola Flag Stand [8, 0, 16]
+    if (planetIndex === 1 && storyStep === 'moon_exit_flag' && !isFlagPlantedOnMoon) {
+      const yaw = Math.atan2(MOON_FLAG_SPOT_POS[0] - 0, MOON_FLAG_SPOT_POS[2] - 9.5);
+      return [
+        { pos: [1.8, 0.08, 11.0], rotY: yaw },
+        { pos: [3.8, 0.08, 12.6], rotY: yaw },
+        { pos: [5.8, 0.08, 14.3], rotY: yaw },
+      ];
+    }
+
+    return [];
+  }, [gameMode, scene, planetIndex, storyStep, hasSpacesuit, isLaunching, isFlagPlantedOnMoon]);
+
+  if (arrows.length === 0) return null;
+
+  const arrowColor = storyStep === 'walk_to_rocket' ? '#38bdf8' : '#facc15';
+  const arrowScale = storyStep === 'walk_to_rocket' ? 1.45 : 0.92;
+
+  return (
+    <group>
+      {arrows.map((a, idx) => (
+        <FloorChevronArrow
+          key={`mission-arrow-${storyStep}-${idx}`}
+          pos={a.pos}
+          rotY={a.rotY}
+          index={idx}
+          color={arrowColor}
+          scale={arrowScale}
+        />
+      ))}
+    </group>
+  );
+}
+

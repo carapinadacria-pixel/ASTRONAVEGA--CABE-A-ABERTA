@@ -10,10 +10,21 @@ import { SpaceScene } from './SpaceScene';
 import { useGameStore, PLANETS, GameMusicTrack } from '../store';
 import { Joystick } from './Joystick';
 import { MobileActionControls } from './MobileActionControls';
-import { initAudio, updateAudio, toggleAudio, playRefuelPumpSound, setAudioEnvironment, stopMissionVoice, setMusicMode } from '../audio';
+import {
+  initAudio,
+  updateAudio,
+  toggleAudio,
+  playRefuelPumpSound,
+  setAudioEnvironment,
+  stopMissionVoice,
+  setMusicMode,
+  setMusicVolumeLevel,
+  setSfxVolumeLevel,
+} from '../audio';
 import { initGameDatabase, saveGameStateToDB, loadGameStateFromDB, getDatabaseStatus } from '../utils/gameDatabase';
 import { ModeSelectionScreen, StoryVideoPlayerScreen, StoryMissionHUD, StoryTopRightActionButtons } from './StoryModeOverlays';
 import { UI_TEXT, getPlanetName } from '../utils/i18n';
+import { RESOURCE_DEFINITIONS, getLocalizedResourceDef } from '../utils/nasaData';
 import {
   Crosshair,
   Shield,
@@ -42,6 +53,7 @@ import {
   Languages,
   Music,
   VolumeX,
+  Volume2,
 } from 'lucide-react';
 import { InventoryModal } from './InventoryModal';
 import { ComputerBookLibraryModal } from './ComputerBookLibraryModal';
@@ -1062,15 +1074,15 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
         <Camera className="w-6 h-6 group-hover:text-blue-400 transition-colors" />
       </button>
 
-      {planetIndex === 0 ? (
-        <button
-          onClick={() => onAction('collect')}
-          className="bg-white/10 hover:bg-white/20 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all backdrop-blur-md border border-white/20 group cursor-pointer"
-          title={t.collectResourcesTitle}
-        >
-          <Zap className="w-6 h-6 group-hover:text-yellow-400 transition-colors" />
-        </button>
-      ) : (
+      <button
+        onClick={() => onAction('collect')}
+        className="bg-white/10 hover:bg-white/20 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all backdrop-blur-md border border-white/20 group cursor-pointer"
+        title={t.collectResourcesTitle}
+      >
+        <Zap className="w-6 h-6 group-hover:text-yellow-400 transition-colors" />
+      </button>
+
+      {planetIndex !== 0 && (
         <button
           onClick={() => toggleOxygenChamber()}
           className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all backdrop-blur-md border group cursor-pointer ${
@@ -1298,6 +1310,8 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
   const dehydrationSeconds = useGameStore((state) => state.dehydrationSeconds);
   const isOxygenChamberOpen = useGameStore((state) => state.isOxygenChamberOpen);
   const isDying = useGameStore((state) => state.isDying);
+  const gameMode = useGameStore((state) => state.gameMode);
+  const hasSpacesuit = useGameStore((state) => state.hasSpacesuit);
   const language = useGameStore((state) => state.language);
   const t = UI_TEXT[language];
 
@@ -1305,6 +1319,7 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
     return null;
   }
 
+  const showSuitBar = gameMode !== 'story' || hasSpacesuit;
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
   const isSolarProximityDrain =
     scene === 'surface' && (currentPlanet.type === 'mercury' || currentPlanet.type === 'venus');
@@ -1322,9 +1337,9 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
     ? { text: t.dehydrationBadge, cls: 'text-red-200 bg-red-900/95 border-red-400 animate-pulse' }
     : oxygen <= 0
     ? { text: t.hydrateBadge, cls: 'text-amber-200 bg-amber-900/95 border-amber-400 animate-pulse' }
-    : health < 35 || oxygen < 30
+    : (showSuitBar && health < 35) || oxygen < 30
     ? { text: t.alertBadge, cls: 'text-red-300 bg-red-950/90 border-red-400/50 animate-pulse' }
-    : maxHealth > 100
+    : showSuitBar && maxHealth > 100
     ? { text: t.reinforcedBadge, cls: 'text-cyan-300 bg-cyan-950/90 border-cyan-400/40' }
     : { text: t.nominalBadge, cls: 'text-emerald-400 bg-emerald-950/80 border-emerald-500/30' };
 
@@ -1346,26 +1361,28 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
           </span>
         </div>
 
-        {/* Proteção do Traje */}
-        <div className="flex flex-col gap-0.5">
-          <div className="flex justify-between items-center text-[9px] sm:text-[10px]">
-            <span className="flex items-center gap-1 font-bold text-rose-300">
-              <Shield className="w-3 h-3 text-rose-400" />
-              <span>{t.suitLabel}</span>
-            </span>
-            <span className="font-mono font-bold text-rose-200">
-              {Math.max(0, Math.round(health))}/{maxHealth}
-            </span>
+        {/* Proteção do Traje (Hidden before suit equipped in Story Mode) */}
+        {showSuitBar && (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex justify-between items-center text-[9px] sm:text-[10px]">
+              <span className="flex items-center gap-1 font-bold text-rose-300">
+                <Shield className="w-3 h-3 text-rose-400" />
+                <span>{t.suitLabel}</span>
+              </span>
+              <span className="font-mono font-bold text-rose-200">
+                {Math.max(0, Math.round(health))}/{maxHealth}
+              </span>
+            </div>
+            <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden border border-rose-500/25">
+              <div
+                className={`h-full rounded-full transition-all duration-150 ${
+                  maxHealth > 100 ? 'bg-gradient-to-r from-emerald-400 to-cyan-400' : 'bg-gradient-to-r from-rose-500 to-red-400'
+                }`}
+                style={{ width: `${Math.max(0, Math.min(100, (health / maxHealth) * 100))}%` }}
+              />
+            </div>
           </div>
-          <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden border border-rose-500/25">
-            <div
-              className={`h-full rounded-full transition-all duration-150 ${
-                maxHealth > 100 ? 'bg-gradient-to-r from-emerald-400 to-cyan-400' : 'bg-gradient-to-r from-rose-500 to-red-400'
-              }`}
-              style={{ width: `${Math.max(0, Math.min(100, (health / maxHealth) * 100))}%` }}
-            />
-          </div>
-        </div>
+        )}
 
         {/* Quantidade de Água & Oxigénio */}
         <div className="flex flex-col gap-0.5">
@@ -1558,6 +1575,10 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
   const setLanguage = useGameStore((state) => state.setLanguage);
   const gameMusicTrack = useGameStore((state) => state.gameMusicTrack);
   const setGameMusicTrack = useGameStore((state) => state.setGameMusicTrack);
+  const musicVolume = useGameStore((state) => state.musicVolume);
+  const setMusicVolume = useGameStore((state) => state.setMusicVolume);
+  const sfxVolume = useGameStore((state) => state.sfxVolume);
+  const setSfxVolume = useGameStore((state) => state.setSfxVolume);
   const t = UI_TEXT[language];
 
   return (
@@ -1680,7 +1701,7 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
         </p>
       </div>
 
-      {/* In-Game Music Selector (4 options: Epic, Orbital, Tactical, No Music) */}
+      {/* In-Game Music Selector (5 options including Beethoven Op. 68) */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
@@ -1692,10 +1713,11 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
         <div className="grid grid-cols-2 gap-2">
           {(
             [
-              { id: 'epic', label: t.musicTrackEpic, sub: t.musicTrackEpicSub, activeClass: 'bg-cyan-600/35 border-cyan-400 text-white shadow-md shadow-cyan-500/20' },
-              { id: 'orbital', label: t.musicTrackOrbital, sub: t.musicTrackOrbitalSub, activeClass: 'bg-indigo-600/35 border-indigo-400 text-white shadow-md shadow-indigo-500/20' },
-              { id: 'tactical', label: t.musicTrackTactical, sub: t.musicTrackTacticalSub, activeClass: 'bg-amber-600/35 border-amber-400 text-white shadow-md shadow-amber-500/20' },
-              { id: 'none', label: t.musicTrackNone, sub: t.musicTrackNoneSub, activeClass: 'bg-rose-600/35 border-rose-400 text-white shadow-md shadow-rose-500/20' },
+              { id: 'beethoven_op68', label: t.musicTrackBeethovenOp68, sub: t.musicTrackBeethovenOp68Sub, activeClass: 'bg-amber-600/35 border-amber-400 text-white shadow-md shadow-amber-500/20', spanFull: true },
+              { id: 'epic', label: t.musicTrackEpic, sub: t.musicTrackEpicSub, activeClass: 'bg-cyan-600/35 border-cyan-400 text-white shadow-md shadow-cyan-500/20', spanFull: false },
+              { id: 'tactical', label: t.musicTrackTactical, sub: t.musicTrackTacticalSub, activeClass: 'bg-orange-600/35 border-orange-400 text-white shadow-md shadow-orange-500/20', spanFull: false },
+              { id: 'orbital', label: t.musicTrackOrbital, sub: t.musicTrackOrbitalSub, activeClass: 'bg-indigo-600/35 border-indigo-400 text-white shadow-md shadow-indigo-500/20', spanFull: false },
+              { id: 'none', label: t.musicTrackNone, sub: t.musicTrackNoneSub, activeClass: 'bg-rose-600/35 border-rose-400 text-white shadow-md shadow-rose-500/20', spanFull: false },
             ] as const
           ).map((opt) => {
             const isSelected = gameMusicTrack === opt.id;
@@ -1707,7 +1729,7 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
                   initAudio();
                   setGameMusicTrack(opt.id as GameMusicTrack);
                 }}
-                className={`p-2.5 rounded-2xl border text-left transition-all flex flex-col gap-0.5 cursor-pointer ${
+                className={`${opt.spanFull ? 'col-span-2' : ''} p-2.5 rounded-2xl border text-left transition-all flex flex-col gap-0.5 cursor-pointer ${
                   isSelected
                     ? `${opt.activeClass} font-bold`
                     : 'bg-slate-800/60 border-white/10 text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -1725,6 +1747,56 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Audio Mix Sliders (Music vs Game SFX/Ambience) */}
+      <div className="flex flex-col gap-2.5 bg-slate-800/60 border border-white/10 rounded-2xl p-3">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
+          <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+          <span>{t.audioVolumesLabel}</span>
+        </div>
+
+        {/* Music Volume Slider */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-slate-300">{t.musicVolumeLabel}</span>
+            <span className="font-mono font-bold text-cyan-300">{Math.round(musicVolume * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(musicVolume * 100)}
+            onChange={(e) => {
+              const v = Number(e.target.value) / 100;
+              initAudio();
+              setMusicVolume(v);
+              setMusicVolumeLevel(v);
+            }}
+            className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+          />
+        </div>
+
+        {/* SFX & Ambience Volume Slider */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-slate-300">{t.sfxVolumeLabel}</span>
+            <span className="font-mono font-bold text-emerald-300">{Math.round(sfxVolume * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(sfxVolume * 100)}
+            onChange={(e) => {
+              const v = Number(e.target.value) / 100;
+              initAudio();
+              setSfxVolume(v);
+              setSfxVolumeLevel(v);
+            }}
+            className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+          />
         </div>
       </div>
 
@@ -1787,9 +1859,6 @@ const DesktopControlsGuide = memo(function DesktopControlsGuide() {
           <>
             <p>
               <strong className="text-white/90">W A S D</strong> {t.walkRun}
-            </p>
-            <p>
-              <strong className="text-white/90">SPACE</strong> {t.jumpSwim}
             </p>
             <p>
               <strong className="text-white/90">R</strong> {t.boardCarRocket}
@@ -2164,6 +2233,8 @@ export function Game() {
   const inventory = useGameStore((state) => state.inventory);
   const recentCollectedItem = useGameStore((state) => state.recentCollectedItem);
   const clearRecentCollectedItem = useGameStore((state) => state.clearRecentCollectedItem);
+  const backpackLimitAlert = useGameStore((state) => state.backpackLimitAlert);
+  const clearBackpackLimitAlert = useGameStore((state) => state.clearBackpackLimitAlert);
 
   const targetFps = useGameStore((state) => state.targetFps);
   const setTargetFps = useGameStore((state) => state.setTargetFps);
@@ -2177,6 +2248,14 @@ export function Game() {
   const setLanguage = useGameStore((state) => state.setLanguage);
   const gameMusicTrack = useGameStore((state) => state.gameMusicTrack);
   const setGameMusicTrack = useGameStore((state) => state.setGameMusicTrack);
+  const menuMusicTrack = useGameStore((state) => state.menuMusicTrack);
+  const setMenuMusicTrack = useGameStore((state) => state.setMenuMusicTrack);
+  const explorationWithCompanion = useGameStore((state) => state.explorationWithCompanion);
+  const setExplorationWithCompanion = useGameStore((state) => state.setExplorationWithCompanion);
+  const musicVolume = useGameStore((state) => state.musicVolume);
+  const setMusicVolume = useGameStore((state) => state.setMusicVolume);
+  const sfxVolume = useGameStore((state) => state.sfxVolume);
+  const setSfxVolume = useGameStore((state) => state.setSfxVolume);
   const toggleHabitatDoor = useGameStore((state) => state.toggleHabitatDoor);
 
   const appStage = useGameStore((state) => state.appStage);
@@ -2194,13 +2273,17 @@ export function Game() {
     storageType: 'indexeddb',
     lastSaved: null,
   });
+  const [dbHydrated, setDbHydrated] = useState(false);
 
   const handleAction = useCallback((action: string) => {
     setActionRequested(action);
+    if (action === 'collect') {
+      window.dispatchEvent(new CustomEvent('astronavega-collect'));
+    }
     setTimeout(() => setActionRequested(null), 100);
   }, []);
 
-  // Initialize and hydrate state from client-side IndexedDB database (Keep 20 FPS default on startup)
+  // Initialize and hydrate state from client-side IndexedDB database (Apply 85% music / 5% SFX default migration once)
   useEffect(() => {
     initGameDatabase().then(async () => {
       const status = getDatabaseStatus();
@@ -2211,7 +2294,23 @@ export function Game() {
         if (saved.characterGender) setCharacterGender(saved.characterGender as 'male' | 'female');
         if (saved.visorMode) setVisorMode(saved.visorMode as 'transparent' | 'gold');
         if (saved.language === 'pt' || saved.language === 'en') setLanguage(saved.language);
+        if (saved.targetFps === 20 || saved.targetFps === 30 || saved.targetFps === 40 || saved.targetFps === 60) {
+          setTargetFps(saved.targetFps);
+        }
+        if (typeof saved.explorationWithCompanion === 'boolean') {
+          setExplorationWithCompanion(saved.explorationWithCompanion);
+        }
         if (
+          saved.menuMusicTrack === 'beethoven_op68' ||
+          saved.menuMusicTrack === 'epic' ||
+          saved.menuMusicTrack === 'orbital' ||
+          saved.menuMusicTrack === 'tactical' ||
+          saved.menuMusicTrack === 'none'
+        ) {
+          setMenuMusicTrack(saved.menuMusicTrack);
+        }
+        if (
+          saved.gameMusicTrack === 'beethoven_op68' ||
           saved.gameMusicTrack === 'epic' ||
           saved.gameMusicTrack === 'orbital' ||
           saved.gameMusicTrack === 'tactical' ||
@@ -2219,12 +2318,44 @@ export function Game() {
         ) {
           setGameMusicTrack(saved.gameMusicTrack);
         }
+        if (saved.audioDefaultsVersion === 2) {
+          if (typeof saved.musicVolume === 'number') {
+            setMusicVolume(saved.musicVolume);
+            setMusicVolumeLevel(saved.musicVolume);
+          }
+          if (typeof saved.sfxVolume === 'number') {
+            setSfxVolume(saved.sfxVolume);
+            setSfxVolumeLevel(saved.sfxVolume);
+          }
+        } else {
+          // Enforce new 85% music / 5% SFX defaults for pre-existing saves
+          setMusicVolume(0.85);
+          setMusicVolumeLevel(0.85);
+          setSfxVolume(0.05);
+          setSfxVolumeLevel(0.05);
+        }
+      } else {
+        setMusicVolumeLevel(0.85);
+        setSfxVolumeLevel(0.05);
       }
+      setDbHydrated(true);
     });
-  }, [setSuitStyle, setCharacterGender, setVisorMode, setLanguage, setGameMusicTrack]);
+  }, [
+    setSuitStyle,
+    setCharacterGender,
+    setVisorMode,
+    setLanguage,
+    setTargetFps,
+    setExplorationWithCompanion,
+    setMenuMusicTrack,
+    setGameMusicTrack,
+    setMusicVolume,
+    setSfxVolume,
+  ]);
 
-  // Auto-save changes to client-side database quietly in background
+  // Auto-save changes to client-side database quietly in background (after initial hydration completes)
   useEffect(() => {
+    if (!dbHydrated) return;
     saveGameStateToDB({
       suitStyle,
       characterGender,
@@ -2232,11 +2363,29 @@ export function Game() {
       targetFps,
       planetIndex,
       language,
+      menuMusicTrack,
       gameMusicTrack,
+      explorationWithCompanion,
+      musicVolume,
+      sfxVolume,
+      audioDefaultsVersion: 2,
     }).then(() => {
       setDbState(getDatabaseStatus());
     });
-  }, [suitStyle, characterGender, visorMode, targetFps, planetIndex, language, gameMusicTrack]);
+  }, [
+    dbHydrated,
+    suitStyle,
+    characterGender,
+    visorMode,
+    targetFps,
+    planetIndex,
+    language,
+    menuMusicTrack,
+    gameMusicTrack,
+    explorationWithCompanion,
+    musicVolume,
+    sfxVolume,
+  ]);
 
   const handleManualSave = useCallback(async () => {
     await saveGameStateToDB({
@@ -2246,12 +2395,31 @@ export function Game() {
       targetFps,
       planetIndex,
       language,
+      menuMusicTrack,
       gameMusicTrack,
+      explorationWithCompanion,
+      musicVolume,
+      sfxVolume,
+      audioDefaultsVersion: 2,
       health,
       oxygen,
     });
     setDbState(getDatabaseStatus());
-  }, [suitStyle, characterGender, visorMode, targetFps, planetIndex, language, gameMusicTrack, health, oxygen]);
+  }, [
+    suitStyle,
+    characterGender,
+    visorMode,
+    targetFps,
+    planetIndex,
+    language,
+    menuMusicTrack,
+    gameMusicTrack,
+    explorationWithCompanion,
+    musicVolume,
+    sfxVolume,
+    health,
+    oxygen,
+  ]);
 
   useEffect(() => {
     if (appStage !== 'playing') return;
@@ -2268,16 +2436,16 @@ export function Game() {
     setAudioEnvironment(scene, planetIndex);
   }, [appStage, scene, planetIndex]);
 
-  // Switch between Menu Suspense Music, Story Video Silence, and In-Game Selected Music
+  // Switch between Opening/Menu Music, Story Video Silence, and In-Game Selected Music
   useEffect(() => {
     if (appStage === 'mode_select') {
-      setMusicMode('menu_suspense');
+      setMusicMode(menuMusicTrack === 'none' ? 'silent' : menuMusicTrack);
     } else if (appStage === 'story_video') {
       setMusicMode('silent');
     } else {
       setMusicMode(gameMusicTrack === 'none' ? 'silent' : gameMusicTrack);
     }
-  }, [appStage, gameMusicTrack]);
+  }, [appStage, gameMusicTrack, menuMusicTrack]);
 
   // Auto-dismiss item pickup toast
   useEffect(() => {
@@ -2288,6 +2456,16 @@ export function Game() {
       return () => clearTimeout(timer);
     }
   }, [recentCollectedItem, clearRecentCollectedItem]);
+
+  // Auto-dismiss backpack capacity/expansion toast
+  useEffect(() => {
+    if (backpackLimitAlert) {
+      const timer = setTimeout(() => {
+        clearBackpackLimitAlert();
+      }, 3400);
+      return () => clearTimeout(timer);
+    }
+  }, [backpackLimitAlert, clearBackpackLimitAlert]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -2471,9 +2649,41 @@ export function Game() {
                 {t.resourceCollected}
               </span>
               <span className="text-xs font-bold text-slate-100">
-                +{recentCollectedItem.amount} {recentCollectedItem.name}
+                +{recentCollectedItem.amount}{' '}
+                {(() => {
+                  const def = RESOURCE_DEFINITIONS[recentCollectedItem.id];
+                  return def ? getLocalizedResourceDef(def, language).name : recentCollectedItem.name;
+                })()}
               </span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Backpack Capacity / Expansion Alert Toast */}
+      {backpackLimitAlert && (
+        <div className="fixed top-36 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-200">
+          <div
+            className={`flex items-center gap-3 backdrop-blur-xl px-4 py-2.5 rounded-2xl shadow-2xl border ${
+              backpackLimitAlert.reason === 'expanded'
+                ? 'bg-emerald-950/95 border-emerald-400/75 text-emerald-100'
+                : 'bg-rose-950/95 border-rose-400/75 text-rose-100'
+            }`}
+          >
+            {backpackLimitAlert.reason === 'expanded' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+            )}
+            <span className="text-xs font-bold">
+              {backpackLimitAlert.reason === 'expanded'
+                ? t.backpackExpandedToast
+                : backpackLimitAlert.reason === 'weight'
+                ? t.backpackLimitWeight
+                : backpackLimitAlert.reason === 'slots'
+                ? t.backpackLimitSlots
+                : t.backpackLimitStack}
+            </span>
           </div>
         </div>
       )}

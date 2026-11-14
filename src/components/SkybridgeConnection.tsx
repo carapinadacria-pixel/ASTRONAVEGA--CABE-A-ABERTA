@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { Text } from '@react-three/drei';
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace, DoubleSide } from 'three';
+import { useGameStore } from '../store';
+import { UI_TEXT } from '../utils/i18n';
 
 // Procedural industrial non-slip grating texture for skybridge floor
 let cachedSkybridgeTexture: CanvasTexture | null = null;
@@ -53,6 +55,8 @@ function getSkybridgeTexture(): CanvasTexture | null {
  */
 export function SkybridgeConnection() {
   const gratingMap = useMemo(() => getSkybridgeTexture(), []);
+  const language = useGameStore((s) => s.language);
+  const t = UI_TEXT[language];
 
   // Unified Skybridge & Rooftop Staircase 2 axis: X = 241.5
   const posX = 241.5;
@@ -246,13 +250,24 @@ export function SkybridgeConnection() {
             </mesh>
           </group>
         ))}
-        <group position={[0, 2.8, 6.0]}>
+        <group position={[0, 2.85, 6.0]}>
           <mesh>
-            <boxGeometry args={[3.6, 0.48, 0.08]} />
-            <meshStandardMaterial color="#0f172a" metalness={0.8} />
+            <boxGeometry args={[5.2, 0.88, 0.10]} />
+            <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.25} />
           </mesh>
-          <Text position={[0, 0, 0.06]} fontSize={0.19} color="#38bdf8" fontWeight="bold" anchorX="center">
-            PONTE ENVIDRAÇADA NIVELADA ➔ TERRAÇO DO LABORATÓRIO (18.5m)
+          <mesh position={[0, 0.41, 0.04]}>
+            <boxGeometry args={[5.05, 0.04, 0.04]} />
+            <meshBasicMaterial color="#38bdf8" />
+          </mesh>
+          <mesh position={[0, -0.41, 0.04]}>
+            <boxGeometry args={[5.05, 0.04, 0.04]} />
+            <meshBasicMaterial color="#38bdf8" />
+          </mesh>
+          <Text position={[0, 0.14, 0.07]} fontSize={0.20} maxWidth={4.8} color="#38bdf8" fontWeight="bold" anchorX="center">
+            {t.signPonteTerraçoLine1}
+          </Text>
+          <Text position={[0, -0.15, 0.07]} fontSize={0.18} maxWidth={4.8} color="#f8fafc" fontWeight="bold" anchorX="center">
+            {t.signPonteTerraçoLine2}
           </Text>
         </group>
       </group>
@@ -295,9 +310,22 @@ export function SkybridgeConnection() {
             <meshStandardMaterial color="#1e293b" metalness={0.9} roughness={0.2} />
           </mesh>
           {idx === 1 && (
-            <Text position={[0, 1.75, -0.50]} rotation={[0, Math.PI, 0]} fontSize={0.20} color="#38bdf8" fontWeight="bold" anchorX="center">
-              PONTE ENVIDRAÇADA NIVELADA ➔ HANGAR VAB
-            </Text>
+            <group position={[0, 1.82, -0.52]} rotation={[0, Math.PI, 0]}>
+              <mesh>
+                <boxGeometry args={[5.0, 0.86, 0.10]} />
+                <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.25} />
+              </mesh>
+              <mesh position={[0, 0.40, 0.04]}>
+                <boxGeometry args={[4.85, 0.04, 0.04]} />
+                <meshBasicMaterial color="#38bdf8" />
+              </mesh>
+              <Text position={[0, 0.14, 0.07]} fontSize={0.20} maxWidth={4.6} color="#38bdf8" fontWeight="bold" anchorX="center">
+                {t.signPonteHangarLine1}
+              </Text>
+              <Text position={[0, -0.15, 0.07]} fontSize={0.18} maxWidth={4.6} color="#f8fafc" fontWeight="bold" anchorX="center">
+                {t.signPonteHangarLine2}
+              </Text>
+            </group>
           )}
         </group>
       ))}
@@ -567,13 +595,24 @@ export function SkybridgeConnection() {
         ))}
 
         {/* Signboard at Base of Staircase 1 */}
-        <group position={[0, 2.7, stair1StartZ - 0.5]} rotation={[0, Math.PI, 0]}>
+        <group position={[0, 2.75, stair1StartZ - 0.5]} rotation={[0, Math.PI, 0]}>
           <mesh>
-            <boxGeometry args={[3.5, 0.44, 0.08]} />
-            <meshStandardMaterial color="#0f172a" metalness={0.85} />
+            <boxGeometry args={[5.0, 0.86, 0.10]} />
+            <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.25} />
           </mesh>
-          <Text position={[0, 0, 0.06]} fontSize={0.18} color="#38bdf8" fontWeight="bold" anchorX="center">
-            1ª ESCADA ➔ 2º PISO TECNOLÓGICO DO LABORATÓRIO (10.5m)
+          <mesh position={[0, 0.40, 0.04]}>
+            <boxGeometry args={[4.85, 0.04, 0.04]} />
+            <meshBasicMaterial color="#38bdf8" />
+          </mesh>
+          <mesh position={[0, -0.40, 0.04]}>
+            <boxGeometry args={[4.85, 0.04, 0.04]} />
+            <meshBasicMaterial color="#38bdf8" />
+          </mesh>
+          <Text position={[0, 0.14, 0.07]} fontSize={0.20} maxWidth={4.6} color="#38bdf8" fontWeight="bold" anchorX="center">
+            {t.signStair1Line1}
+          </Text>
+          <Text position={[0, -0.15, 0.07]} fontSize={0.18} maxWidth={4.6} color="#f8fafc" fontWeight="bold" anchorX="center">
+            {t.signStair1Line2}
           </Text>
         </group>
       </group>
@@ -687,13 +726,24 @@ export function SkybridgeConnection() {
         ))}
 
         {/* Signboard at Base of Staircase 2 on the 2nd Floor */}
-        <group position={[0, stair2StartY + 2.7, stair2StartZ - 0.5]} rotation={[0, Math.PI, 0]}>
+        <group position={[0, stair2StartY + 2.75, stair2StartZ - 0.5]} rotation={[0, Math.PI, 0]}>
           <mesh>
-            <boxGeometry args={[3.6, 0.44, 0.08]} />
-            <meshStandardMaterial color="#0f172a" metalness={0.85} />
+            <boxGeometry args={[5.2, 0.88, 0.10]} />
+            <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.25} />
           </mesh>
-          <Text position={[0, 0, 0.06]} fontSize={0.18} color="#38bdf8" fontWeight="bold" anchorX="center">
-            2ª ESCADA ➔ TETO DO LABORATÓRIO & PONTE ENVIDRAÇADA
+          <mesh position={[0, 0.41, 0.04]}>
+            <boxGeometry args={[5.05, 0.04, 0.04]} />
+            <meshBasicMaterial color="#38bdf8" />
+          </mesh>
+          <mesh position={[0, -0.41, 0.04]}>
+            <boxGeometry args={[5.05, 0.04, 0.04]} />
+            <meshBasicMaterial color="#38bdf8" />
+          </mesh>
+          <Text position={[0, 0.14, 0.07]} fontSize={0.20} maxWidth={4.8} color="#38bdf8" fontWeight="bold" anchorX="center">
+            {t.signStair2Line1}
+          </Text>
+          <Text position={[0, -0.15, 0.07]} fontSize={0.18} maxWidth={4.8} color="#f8fafc" fontWeight="bold" anchorX="center">
+            {t.signStair2Line2}
           </Text>
         </group>
       </group>

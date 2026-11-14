@@ -18,9 +18,11 @@ import {
 import { RocketModel } from './RocketModel';
 import { OrbitalCapsule } from './OrbitalCapsule';
 import { RealisticEarthGlobe } from './RealisticEarthGlobe';
-import { Text, Stars, Sphere, Ring, useKeyboardControls, Instances, Instance } from '@react-three/drei';
+import { RealisticSun, RealisticSaturnGlobe } from './RealisticCelestialBodies';
+import { Text, Stars, Sphere, useKeyboardControls, Instances, Instance } from '@react-three/drei';
 import { playSolarEvaporationSound } from '../audio';
 import { getPlanetName } from '../utils/i18n';
+import { computeCosmicPlanetPositions } from '../utils/spaceCoordinates';
 
 // Reusable scratch vectors to eliminate per-frame GC allocations in spaceflight
 const _spaceIdealOffset = new Vector3();
@@ -29,6 +31,7 @@ const _spawnLookTarget = new Vector3();
 const _autoLookMat = new Matrix4();
 const _autoTargetQuat = new Quaternion();
 const _worldUp = new Vector3(0, 1, 0);
+const _shipFwd = new Vector3();
 
 interface CosmicPlanet extends PlanetInfo {
   pos: Vector3;
@@ -43,7 +46,6 @@ interface CosmicPlanet extends PlanetInfo {
 // ---------------------------------------------------------------------------
 
 let cachedJupiterTexture: CanvasTexture | null = null;
-let cachedSaturnTexture: CanvasTexture | null = null;
 let cachedMarsTexture: CanvasTexture | null = null;
 let cachedVenusTexture: CanvasTexture | null = null;
 
@@ -99,32 +101,6 @@ function createJupiterTexture(): CanvasTexture | null {
   cachedJupiterTexture.wrapS = RepeatWrapping;
   cachedJupiterTexture.wrapT = RepeatWrapping;
   return cachedJupiterTexture;
-}
-
-function createSaturnTexture(): CanvasTexture | null {
-  if (cachedSaturnTexture) return cachedSaturnTexture;
-  if (typeof document === 'undefined') return null;
-
-  const w = 512;
-  const h = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    // Golden subtle gas bands
-    const bands = ['#fef08a', '#fde047', '#eab308', '#ca8a04', '#eab308', '#fef08a'];
-    const bh = h / bands.length;
-    bands.forEach((c, idx) => {
-      ctx.fillStyle = c;
-      ctx.fillRect(0, idx * bh, w, bh + 1);
-    });
-  }
-
-  cachedSaturnTexture = new CanvasTexture(canvas);
-  cachedSaturnTexture.colorSpace = SRGBColorSpace;
-  cachedSaturnTexture.wrapS = RepeatWrapping;
-  return cachedSaturnTexture;
 }
 
 function createMarsTexture(): CanvasTexture | null {
@@ -247,7 +223,6 @@ export function SpaceScene() {
 
   // Procedural planetary surface textures
   const jupiterMap = useMemo(() => createJupiterTexture(), []);
-  const saturnMap = useMemo(() => createSaturnTexture(), []);
   const marsMap = useMemo(() => createMarsTexture(), []);
   const venusMap = useMemo(() => createVenusTexture(), []);
 
@@ -256,124 +231,10 @@ export function SpaceScene() {
   // Scaled proportionally: Jupiter (920) > Saturn (780) > Uranus (520) > Neptune (500)
   // > Earth (380) > Venus (360) > Mars (260) > Titan (190) > Mercury (180) > Moon (140)
   // ---------------------------------------------------------------------------
-  const planetPositions: CosmicPlanet[] = useMemo(() => {
-    return PLANETS.map((p, i) => {
-      let visualRadius = 380;
-      let atmosphereColor = '#38bdf8';
-      let hasRings = false;
-      let dist = 5000;
-      let angle = (i / PLANETS.length) * Math.PI * 2;
-      let height = ((i % 3) - 1) * 350;
-
-      switch (p.type) {
-        case 'mercury':
-          visualRadius = 180;
-          atmosphereColor = '#a8a29e';
-          dist = 3550;
-          angle = 0.45;
-          break;
-        case 'venus':
-          visualRadius = 360;
-          atmosphereColor = '#fbbf24';
-          dist = 5000;
-          angle = 1.35;
-          break;
-        case 'earth':
-          visualRadius = 380;
-          atmosphereColor = '#38bdf8';
-          dist = 6200;
-          angle = 2.40;
-          break;
-        case 'moon':
-          visualRadius = 140;
-          atmosphereColor = '#cbd5e1';
-          dist = 6200;
-          angle = 2.40;
-          // Offset relative to Earth
-          return {
-            ...p,
-            visualRadius,
-            atmosphereColor,
-            hasRings: false,
-            pos: new Vector3(
-              Math.cos(2.40) * 6200 + 460,
-              45,
-              Math.sin(2.40) * 6200 + 320
-            ),
-          };
-        case 'mars':
-          visualRadius = 260;
-          atmosphereColor = '#f97316';
-          dist = 8400;
-          angle = 3.65;
-          break;
-        case 'jupiter':
-          visualRadius = 920;
-          atmosphereColor = '#d97706';
-          dist = 14200;
-          angle = 4.70;
-          break;
-        case 'saturn':
-          visualRadius = 780;
-          atmosphereColor = '#eab308';
-          hasRings = true;
-          dist = 18000;
-          angle = 5.60;
-          break;
-        case 'titan':
-          visualRadius = 190;
-          atmosphereColor = '#f59e0b';
-          // Orbiting near Saturn
-          return {
-            ...p,
-            visualRadius,
-            atmosphereColor,
-            hasRings: false,
-            pos: new Vector3(
-              Math.cos(5.60) * 18000 + 820,
-              -60,
-              Math.sin(5.60) * 18000 + 680
-            ),
-          };
-        case 'uranus':
-          visualRadius = 520;
-          atmosphereColor = '#38bdf8';
-          hasRings = true;
-          dist = 22000;
-          angle = 0.95;
-          break;
-        case 'neptune':
-          visualRadius = 500;
-          atmosphereColor = '#2563eb';
-          dist = 25800;
-          angle = 2.10;
-          break;
-        case 'exoplanet':
-          visualRadius = 360 + (i * 65) % 280;
-          atmosphereColor = '#a855f7';
-          hasRings = i % 2 === 0;
-          dist = 29000 + (i * 1400) % 8000;
-          angle = (i * 1.618) * Math.PI * 2;
-          break;
-        default:
-          visualRadius = 380;
-          atmosphereColor = '#60a5fa';
-          dist = 12000;
-      }
-
-      return {
-        ...p,
-        visualRadius,
-        atmosphereColor,
-        hasRings,
-        pos: new Vector3(
-          Math.cos(angle) * dist,
-          height,
-          Math.sin(angle) * dist
-        ),
-      };
-    });
-  }, [PLANETS.length]);
+  const planetPositions: CosmicPlanet[] = useMemo(
+    () => computeCosmicPlanetPositions(PLANETS),
+    [PLANETS.length]
+  );
 
   // Procedural Asteroid Field Belt (Orbital ring between Mars and Jupiter: 9,800m to 12,000m)
   const asteroids = useMemo(() => {
@@ -689,12 +550,17 @@ export function SpaceScene() {
         target: currentTarget,
         distKm: currentDistKm,
       });
+      _shipFwd.set(0, 0, -1).applyQuaternion(rocketRef.current.quaternion);
+      const shipYaw = Math.atan2(_shipFwd.x, -_shipFwd.z);
+
       useGameStore.getState().setSpaceFlightData({
         speed: currentSpeedKmh,
         target: currentTarget,
         distKm: currentDistKm,
         solarHeatPct,
         isEvaporating: false,
+        shipPos: [rocketPos.x, rocketPos.y, rocketPos.z],
+        shipYaw,
       });
     }
   });
@@ -708,41 +574,8 @@ export function SpaceScene() {
       {/* Deep Cosmos Multi-Layer Starfield */}
       <Stars radius={35000} depth={10000} count={12000} factor={8} saturation={0.2} fade speed={0.3} />
 
-      {/* Radiant Central Star (Always-Visible Larger Sun) at (0, 0, 0) with Multi-Layer Solar Corona */}
-      <group position={[0, 0, 0]} frustumCulled={false}>
-        {/* Blazing Incandescent Solar Core */}
-        <Sphere args={[1750, 64, 64]} frustumCulled={false}>
-          <meshBasicMaterial color="#fffbeb" toneMapped={false} />
-        </Sphere>
-        {/* High-Power Omnidirectional Solar Illumination */}
-        <pointLight intensity={24} distance={150000} decay={0.25} color="#fff1db" />
-        {/* Inner Solar Corona Flare Shell */}
-        <Sphere args={[1980, 48, 48]} frustumCulled={false}>
-          <meshBasicMaterial color="#fbbf24" transparent opacity={0.58} depthWrite={false} toneMapped={false} />
-        </Sphere>
-        {/* Middle Solar Flare Chromosphere */}
-        <Sphere args={[2350, 32, 32]} frustumCulled={false}>
-          <meshBasicMaterial color="#f59e0b" transparent opacity={0.26} depthWrite={false} toneMapped={false} />
-        </Sphere>
-        {/* Extended Cosmic Coronal Halo */}
-        <Sphere args={[2950, 24, 24]} frustumCulled={false}>
-          <meshBasicMaterial color="#ea580c" transparent opacity={0.13} depthWrite={false} toneMapped={false} />
-        </Sphere>
-        {/* Ultra-Wide Far Solar Glow (keeps Sun visible even from outer planets) */}
-        <Sphere args={[3800, 20, 20]} frustumCulled={false}>
-          <meshBasicMaterial color="#f97316" transparent opacity={0.07} depthWrite={false} toneMapped={false} />
-        </Sphere>
-        <Text
-          position={[0, 2150, 0]}
-          fontSize={155}
-          color="#fef3c7"
-          outlineWidth={3}
-          outlineColor="#000000"
-          frustumCulled={false}
-        >
-          SOL • CENTRO DO SISTEMA SOLAR
-        </Text>
-      </group>
+      {/* Radiant Central Star (Animated Photosphere, Solar Flares & Corona) at (0, 0, 0) */}
+      <RealisticSun radius={1750} />
 
       {/* Distant Colorful Galactic Nebulae */}
       {nebulaClouds.map((neb, idx) => (
@@ -798,14 +631,11 @@ export function SpaceScene() {
                 />
               </Sphere>
             ) : isSaturn ? (
-              <Sphere args={[p.visualRadius, 64, 64]}>
-                <meshStandardMaterial
-                  map={saturnMap || undefined}
-                  color="#ffffff"
-                  roughness={0.75}
-                  metalness={0.05}
-                />
-              </Sphere>
+              <RealisticSaturnGlobe
+                radius={p.visualRadius}
+                sunDirection={[-p.pos.x, -p.pos.y, -p.pos.z]}
+                planetWorldPos={[p.pos.x, p.pos.y, p.pos.z]}
+              />
             ) : isMars ? (
               <Sphere args={[p.visualRadius, 48, 48]}>
                 <meshStandardMaterial
@@ -834,8 +664,8 @@ export function SpaceScene() {
               </Sphere>
             )}
 
-            {/* Glowing Atmospheric Aura / Translucent Atmosphere Shell (Earth uses Rayleigh Fresnel shader) */}
-            {!isEarth && (
+            {/* Glowing Atmospheric Aura / Translucent Atmosphere Shell (Earth & Saturn use custom Fresnel shaders) */}
+            {!isEarth && !isSaturn && (
               <Sphere args={[p.visualRadius * 1.06, 36, 36]}>
                 <meshBasicMaterial
                   color={p.atmosphereColor}
@@ -844,34 +674,6 @@ export function SpaceScene() {
                   depthWrite={false}
                 />
               </Sphere>
-            )}
-
-            {/* Saturn / Gas Giant Rings */}
-            {isSaturn && (
-              <group rotation={[Math.PI / 2.3, 0.2, 0]}>
-                {/* Inner Ring A */}
-                <mesh>
-                  <ringGeometry args={[p.visualRadius * 1.35, p.visualRadius * 2.15, 64]} />
-                  <meshStandardMaterial
-                    color="#eab308"
-                    side={DoubleSide}
-                    transparent
-                    opacity={0.88}
-                    roughness={0.5}
-                  />
-                </mesh>
-                {/* Outer Ring B (Beyond Cassini Division) */}
-                <mesh>
-                  <ringGeometry args={[p.visualRadius * 2.22, p.visualRadius * 2.65, 64]} />
-                  <meshStandardMaterial
-                    color="#ca8a04"
-                    side={DoubleSide}
-                    transparent
-                    opacity={0.55}
-                    roughness={0.7}
-                  />
-                </mesh>
-              </group>
             )}
 
             {/* Exoplanet Orbital Energy Ring */}

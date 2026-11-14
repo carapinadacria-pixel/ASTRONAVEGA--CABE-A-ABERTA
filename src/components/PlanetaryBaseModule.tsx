@@ -5,7 +5,8 @@ import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { Html, Text } from '@react-three/drei';
 import { Droplets, Shield, Wind, Hand, RefreshCw } from 'lucide-react';
 import { useGameStore } from '../store';
-import { RESOURCE_DEFINITIONS } from '../utils/nasaData';
+import { RESOURCE_DEFINITIONS, getLocalizedResourceDef } from '../utils/nasaData';
+import { playBaseBeepSound } from '../audio';
 
 export interface PlanetaryBaseModuleProps {
   planetId: string;
@@ -22,31 +23,6 @@ interface InternalPodDef {
   resourceId: 'pure_water' | 'oxygen_canister' | 'suit_nanopolymer';
   localPos: [number, number, number];
   yieldAmount: number;
-}
-
-function playBaseBeep(isRefill = false) {
-  try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = isRefill ? 'triangle' : 'sine';
-    osc.frequency.setValueAtTime(isRefill ? 523.25 : 659.25, now);
-    osc.frequency.exponentialRampToValueAtTime(isRefill ? 1046.5 : 1318.5, now + 0.22);
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.18, now + 0.04);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.36);
-  } catch {
-    // Ignore blocked audio context
-  }
 }
 
 export function PlanetaryBaseModule({
@@ -85,6 +61,7 @@ export function PlanetaryBaseModule({
   const nearestPodRef = useRef<string | null>(null);
 
   const collectedNodeIds = useGameStore((s) => s.collectedWorldNodeIds);
+  const language = useGameStore((s) => s.language);
 
   const internalPods = useMemo<InternalPodDef[]>(
     () => [
@@ -125,7 +102,7 @@ export function PlanetaryBaseModule({
   const triggerRefillStation = () => {
     const store = useGameStore.getState();
     store.applyLifeSupportBoost(store.maxHealth, 100);
-    playBaseBeep(true);
+    playBaseBeepSound(true);
     setRefillFeedback(true);
     setTimeout(() => setRefillFeedback(false), 1800);
   };
@@ -135,7 +112,7 @@ export function PlanetaryBaseModule({
     if (store.collectedWorldNodeIds.includes(pod.id)) return;
     store.addInventoryItem(pod.resourceId, pod.yieldAmount);
     store.markNodeCollected(pod.id);
-    playBaseBeep(false);
+    playBaseBeepSound(false);
 
     if (pod.resourceId === 'pure_water') {
       store.applyLifeSupportBoost(5, 25);
@@ -151,10 +128,9 @@ export function PlanetaryBaseModule({
     }
   };
 
-  // Keyboard [B] support inside the planetary base for Refill Station & Supply Pods
+  // Keyboard [B] & mobile/HUD collect button support inside the planetary base for Refill Station & Supply Pods
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'b' && e.key !== 'B') return;
+    const triggerNearestBaseAction = () => {
       if (nearestPodRef.current) {
         const match = internalPods.find((p) => p.id === nearestPodRef.current);
         if (match) {
@@ -166,8 +142,16 @@ export function PlanetaryBaseModule({
         triggerRefillStation();
       }
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'b' && e.key !== 'B') return;
+      triggerNearestBaseAction();
+    };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('astronavega-collect', triggerNearestBaseAction);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('astronavega-collect', triggerNearestBaseAction);
+    };
   }, [internalPods]);
 
   useFrame((state, rawDelta) => {
@@ -263,6 +247,10 @@ export function PlanetaryBaseModule({
         <CuboidCollider args={[2.3, 2.8, 0.25]} position={[4.5, 2.8, 6.6]} />
         {/* Front Doorway Upper Lintel */}
         <CuboidCollider args={[2.2, 0.9, 0.25]} position={[0, 4.7, 6.6]} />
+        {/* Full Pressurized Roof Slab Collider (blocks upward clipping & supports exterior roof walking) */}
+        <CuboidCollider args={[7.0, 0.22, 7.0]} position={[0, 5.58, 0]} />
+        {/* Raised Central Skylight Dome Collider */}
+        <CuboidCollider args={[2.45, 0.55, 2.45]} position={[0, 6.05, 0]} />
         {/* Central Hologram Pedestal Collider */}
         <CuboidCollider args={[1.05, 0.65, 1.05]} position={[0, 0.75, 0]} />
       </RigidBody>
@@ -405,37 +393,104 @@ export function PlanetaryBaseModule({
       </Text>
 
       {/* ============================================================== */}
-      {/* 3. ROOF CANOPY, GEODESIC SKYLIGHT & PLANET-THEMED ARCHITECTURE */}
+      {/* 3. SOLID PHYSICAL ROOF, STEEL BEAMS & RIBBED SKYLIGHT CANOPY   */}
       {/* ============================================================== */}
       <group position={[0, 5.55, 0]}>
-        {/* Outer Reinforced Roof Perimeter Ring */}
-        <mesh position={[0, 0, -4.6]} castShadow>
-          <boxGeometry args={[14.0, 0.32, 4.6]} />
+        {/* Outer Reinforced Roof Armor Plates (Perimeter Deck) */}
+        <mesh position={[0, 0, -4.6]} castShadow receiveShadow>
+          <boxGeometry args={[14.0, 0.36, 4.8]} />
           <meshStandardMaterial color="#334155" metalness={0.85} roughness={0.28} />
         </mesh>
-        <mesh position={[0, 0, 4.6]} castShadow>
-          <boxGeometry args={[14.0, 0.32, 4.6]} />
+        <mesh position={[0, 0, 4.6]} castShadow receiveShadow>
+          <boxGeometry args={[14.0, 0.36, 4.8]} />
           <meshStandardMaterial color="#334155" metalness={0.85} roughness={0.28} />
         </mesh>
-        <mesh position={[-4.6, 0, 0]} castShadow>
-          <boxGeometry args={[4.8, 0.32, 4.6]} />
+        <mesh position={[-4.6, 0, 0]} castShadow receiveShadow>
+          <boxGeometry args={[4.8, 0.36, 4.4]} />
           <meshStandardMaterial color="#334155" metalness={0.85} roughness={0.28} />
         </mesh>
-        <mesh position={[4.6, 0, 0]} castShadow>
-          <boxGeometry args={[4.8, 0.32, 4.6]} />
+        <mesh position={[4.6, 0, 0]} castShadow receiveShadow>
+          <boxGeometry args={[4.8, 0.36, 4.4]} />
           <meshStandardMaterial color="#334155" metalness={0.85} roughness={0.28} />
         </mesh>
 
-        {/* Central Translucent Aerospace Skylight Dome */}
-        <mesh position={[0, 0.1, 0]}>
-          <sphereGeometry args={[3.4, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.45]} />
+        {/* Interior Pressurized Ceiling Lining Panels (clearly visible from inside) */}
+        <mesh position={[0, -0.19, -4.6]} receiveShadow>
+          <boxGeometry args={[12.9, 0.05, 4.1]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.65} roughness={0.42} />
+        </mesh>
+        <mesh position={[0, -0.19, 4.6]} receiveShadow>
+          <boxGeometry args={[12.9, 0.05, 4.1]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.65} roughness={0.42} />
+        </mesh>
+        <mesh position={[-4.55, -0.19, 0]} receiveShadow>
+          <boxGeometry args={[4.1, 0.05, 5.1]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.65} roughness={0.42} />
+        </mesh>
+        <mesh position={[4.55, -0.19, 0]} receiveShadow>
+          <boxGeometry args={[4.1, 0.05, 5.1]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.65} roughness={0.42} />
+        </mesh>
+
+        {/* Heavy Interior Structural Steel Cross-Beams Framing the Central Bay */}
+        {[-2.35, 2.35].map((bzPos, bi) => (
+          <mesh key={`roof-beam-x-${bi}`} position={[0, -0.22, bzPos]} castShadow receiveShadow>
+            <boxGeometry args={[13.1, 0.28, 0.36]} />
+            <meshStandardMaterial color="#0f172a" metalness={0.88} roughness={0.24} />
+          </mesh>
+        ))}
+        {[-2.35, 2.35].map((bxPos, bi) => (
+          <mesh key={`roof-beam-z-${bi}`} position={[bxPos, -0.22, 0]} castShadow receiveShadow>
+            <boxGeometry args={[0.36, 0.28, 13.1]} />
+            <meshStandardMaterial color="#0f172a" metalness={0.88} roughness={0.24} />
+          </mesh>
+        ))}
+
+        {/* Recessed Interior Ceiling LED Light Bars */}
+        {[-4.4, 4.4].map((lx, li) => (
+          <mesh key={`roof-led-${li}`} position={[lx, -0.23, 0]}>
+            <boxGeometry args={[0.24, 0.05, 8.2]} />
+            <meshBasicMaterial color={accentColor} />
+          </mesh>
+        ))}
+        {[-4.4, 4.4].map((lz, li) => (
+          <mesh key={`roof-led-z-${li}`} position={[0, -0.23, lz]}>
+            <boxGeometry args={[8.2, 0.05, 0.24]} />
+            <meshBasicMaterial color="#e0f2fe" />
+          </mesh>
+        ))}
+
+        {/* Solid Skylight Retaining Collar & Internal Mullion Cross-Struts */}
+        <mesh position={[0, 0.04, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+          <torusGeometry args={[2.55, 0.24, 12, 32]} />
+          <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.22} />
+        </mesh>
+        <mesh position={[0, 0.05, 0]} castShadow>
+          <boxGeometry args={[5.0, 0.16, 0.22]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.88} roughness={0.25} />
+        </mesh>
+        <mesh position={[0, 0.05, 0]} castShadow>
+          <boxGeometry args={[0.22, 0.16, 5.0]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.88} roughness={0.25} />
+        </mesh>
+
+        {/* Ribbed Armored Skylight Dome (distinct metallic arches + tinted glass visible from inside & outside) */}
+        {[0, Math.PI / 4, Math.PI / 2, (Math.PI * 3) / 4].map((archAngle, ai) => (
+          <mesh key={`dome-rib-${ai}`} position={[0, 0.05, 0]} rotation={[0, archAngle, 0]} castShadow>
+            <torusGeometry args={[2.52, 0.085, 8, 28, Math.PI]} />
+            <meshStandardMaterial color="#334155" metalness={0.9} roughness={0.22} />
+          </mesh>
+        ))}
+        <mesh position={[0, 0.05, 0]}>
+          <sphereGeometry args={[2.5, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.48]} />
           <meshPhysicalMaterial
             color={roofAccent}
-            metalness={0.25}
-            roughness={0.1}
-            transmission={0.68}
+            metalness={0.45}
+            roughness={0.16}
+            clearcoat={0.9}
+            clearcoatRoughness={0.12}
             transparent
-            opacity={0.72}
+            opacity={0.62}
             side={DoubleSide}
           />
         </mesh>
@@ -582,6 +637,7 @@ export function PlanetaryBaseModule({
       {internalPods.map((pod) => {
         if (collectedNodeIds.includes(pod.id)) return null;
         const def = RESOURCE_DEFINITIONS[pod.resourceId];
+        const loc = def ? getLocalizedResourceDef(def, language) : null;
         const isNearby = nearestPodId === pod.id;
         const podColor =
           pod.resourceId === 'pure_water'
@@ -623,14 +679,14 @@ export function PlanetaryBaseModule({
                     ) : (
                       <Shield className="w-3.5 h-3.5 text-emerald-400" />
                     )}
-                    <span>[B] / Toque: Coletar</span>
+                    <span>{language === 'en' ? '[B] / Tap: Collect' : '[B] / Toque: Coletar'}</span>
                   </div>
                   <span className="text-[11px] font-semibold text-white">
-                    {def?.name || pod.resourceId} +{pod.yieldAmount}
+                    {loc?.name || pod.resourceId} +{pod.yieldAmount}
                   </span>
-                  {def?.effectLabel && (
+                  {loc?.effectLabel && (
                     <span className="text-[9px] font-mono font-bold text-emerald-300">
-                      {def.effectLabel}
+                      {loc.effectLabel}
                     </span>
                   )}
                 </button>

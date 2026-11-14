@@ -7,7 +7,13 @@ import { RocketModel } from './RocketModel';
 import { PlanetaryCapsuleLander } from './PlanetaryCapsuleLander';
 import { LaunchPadStairs } from './LaunchPadStairs';
 import { Text } from '@react-three/drei';
-import { playCountdownVoice, playRocketFlameoutSound, playRocketSeaCrashSound } from '../audio';
+import {
+  playCountdownVoice,
+  playRocketFlameoutSound,
+  playRocketSeaCrashSound,
+  updateRocketLaunchAudio,
+  stopRocketLaunchAudio,
+} from '../audio';
 import { UI_TEXT } from '../utils/i18n';
 
 const _rocketWorldPos = new Vector3();
@@ -46,6 +52,12 @@ export function Rocket() {
   const lastTelemetrySyncRef = useRef<number>(0);
   const [engineIgnited, setEngineIgnited] = React.useState(false);
   const [crashSplashPos, setCrashSplashPos] = React.useState<[number, number, number] | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      stopRocketLaunchAudio();
+    };
+  }, []);
 
   useFrame((state, rawDelta) => {
     const delta = Math.min(rawDelta, 0.05);
@@ -89,6 +101,12 @@ export function Rocket() {
           const isPreIgnition = countdownRef.current <= 2.2;
           if (isPreIgnition !== engineIgnited) {
             setEngineIgnited(isPreIgnition);
+          }
+          if (isPreIgnition) {
+            const spoolProgress = Math.max(0.05, Math.min(1, (2.2 - countdownRef.current) / 2.2));
+            updateRocketLaunchAudio(true, 'preignition', spoolProgress);
+          } else {
+            updateRocketLaunchAudio(false, 'idle', 0);
           }
 
           // Pad vibration builds up as engines spool up
@@ -159,6 +177,10 @@ export function Rocket() {
             const startF = initialLaunchFuelRef.current;
             fuelRef.current = Math.max(8, startF - (currentAlt / 650) * (startF - 12));
 
+            // Continuous Saturn-class liftoff roar evolving with ascent altitude
+            const altNorm = Math.min(1, currentAlt / 650);
+            updateRocketLaunchAudio(true, 'liftoff', Math.max(0.45, 1.0 - altNorm * 0.35));
+
             if (state.clock.elapsedTime - lastTelemetrySyncRef.current > 0.08) {
               lastTelemetrySyncRef.current = state.clock.elapsedTime;
               useGameStore.getState().setLaunchTelemetry({
@@ -177,6 +199,7 @@ export function Rocket() {
             state.camera.lookAt(_rocketWorldPos);
 
             if (rocketRef.current.position.y > 650) {
+              stopRocketLaunchAudio();
               hasInitializedLaunchRef.current = false;
               changePlanet(); // Transition safely to orbit
             }
@@ -202,10 +225,13 @@ export function Rocket() {
               const burnFrac = Math.min(1, currentAlt / maxBurnAlt);
               fuelRef.current = Math.max(0, initialLaunchFuelRef.current * (1 - burnFrac));
 
+              updateRocketLaunchAudio(true, 'liftoff', Math.max(0.55, 1.0 - burnFrac * 0.3));
+
               if (fuelRef.current <= 0.25 || currentAlt >= maxBurnAlt) {
                 fuelRef.current = 0;
                 flightPhaseRef.current = 'flameout';
                 setEngineIgnited(false);
+                stopRocketLaunchAudio();
                 useGameStore.getState().setRocketFuel(0);
                 playRocketFlameoutSound();
               }
@@ -281,16 +307,21 @@ export function Rocket() {
       } else {
         // Planetary Ascent Launch (Immediate liftoff from planetary surface)
         rocketRef.current.position.y += delta * 135;
+        const planetAltFrac = Math.min(1, Math.max(0, rocketRef.current.position.y) / 420);
+        updateRocketLaunchAudio(true, 'planetary', Math.max(0.45, 1.0 - planetAltFrac * 0.35));
+
         rocketRef.current.getWorldPosition(_rocketWorldPos);
         _camTargetPos.set(_rocketWorldPos.x + 24, _rocketWorldPos.y + 10, _rocketWorldPos.z + 32);
         state.camera.position.lerp(_camTargetPos, 0.08);
         state.camera.lookAt(_rocketWorldPos);
 
         if (rocketRef.current.position.y > 420) {
+          stopRocketLaunchAudio();
           changePlanet();
         }
       }
     } else {
+      stopRocketLaunchAudio();
       hasInitializedLaunchRef.current = false;
       if (isEarth) {
         if (clampLeftRef.current) clampLeftRef.current.rotation.z = 0;

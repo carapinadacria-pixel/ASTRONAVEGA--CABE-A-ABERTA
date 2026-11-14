@@ -4,6 +4,7 @@ import { Group, MathUtils, DoubleSide, CanvasTexture, SRGBColorSpace } from 'thr
 import { RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
 import { Text } from '@react-three/drei';
 import { useGameStore } from '../store';
+import { UI_TEXT } from '../utils/i18n';
 import { playDoorOpenSound, playDoorCloseSound } from '../audio';
 import { AngolaFlagDecal, GGPENLogoDecal, NasaSpaceAppsLuandaDecal } from './AngolaFlag';
 import { HangarStairs } from './HangarStairs';
@@ -199,6 +200,8 @@ export function VABInfrastructure() {
   const isHabitatDoorOpen = useGameStore((state) => state.isHabitatDoorOpen);
   const setHabitatDoorOpen = useGameStore((state) => state.setHabitatDoorOpen);
   const toggleHabitatDoor = useGameStore((state) => state.toggleHabitatDoor);
+  const language = useGameStore((state) => state.language);
+  const t = UI_TEXT[language];
 
   // High-resolution procedural textures for corrugated aerospace blast doors
   const doorTextures = useMemo(() => getHangarDoorTextures(), []);
@@ -369,10 +372,23 @@ export function VABInfrastructure() {
               <meshStandardMaterial color="#0f172a" metalness={0.9} />
             </mesh>
           ))}
-          {/* Luminous Directional Signboard */}
-          <Text position={[0, 2.35, -1.15]} rotation={[0, Math.PI, 0]} fontSize={0.22} color="#38bdf8" fontWeight="bold">
-            PONTE ENVIDRAÇADA NIVELADA (18.5m) ➔ HANGAR VAB & 3ª SECÇÃO
-          </Text>
+          {/* Luminous Framed Directional Signboard */}
+          <group position={[0, 2.38, -1.16]} rotation={[0, Math.PI, 0]}>
+            <mesh>
+              <boxGeometry args={[5.2, 0.88, 0.10]} />
+              <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.25} />
+            </mesh>
+            <mesh position={[0, 0.41, 0.04]}>
+              <boxGeometry args={[5.05, 0.04, 0.04]} />
+              <meshBasicMaterial color="#38bdf8" />
+            </mesh>
+            <Text position={[0, 0.14, 0.07]} fontSize={0.20} maxWidth={4.8} color="#38bdf8" fontWeight="bold" anchorX="center">
+              {t.signVabPortalLine1}
+            </Text>
+            <Text position={[0, -0.15, 0.07]} fontSize={0.18} maxWidth={4.8} color="#f8fafc" fontWeight="bold" anchorX="center">
+              {t.signVabPortalLine2}
+            </Text>
+          </group>
         </group>
 
         {/* Official GGPEN and NASA Space Apps Luanda Logos on Upper South Facade (Clear of Skybridge Portal) */}
@@ -962,21 +978,41 @@ export function VABInfrastructure() {
               </mesh>
             </group>
           ))}
-          <group position={[0, 2.55, 0]}>
+          <group position={[0, 2.65, 0]}>
             <mesh>
-              <boxGeometry args={[4.0, 0.48, 0.12]} />
-              <meshStandardMaterial color="#0f172a" metalness={0.85} />
+              <boxGeometry args={[4.1, 0.84, 0.12]} />
+              <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.25} />
             </mesh>
-            <Text position={[0, 0, 0.08]} fontSize={0.20} color="#38bdf8" fontWeight="bold" anchorX="center">
-              PASSADIÇO ➔ PONTE ENVIDRAÇADA & LABORATÓRIO
+            <mesh position={[0, 0.39, 0.05]}>
+              <boxGeometry args={[3.95, 0.04, 0.04]} />
+              <meshBasicMaterial color="#38bdf8" />
+            </mesh>
+            <Text position={[0, 0.14, 0.08]} fontSize={0.19} maxWidth={3.75} color="#38bdf8" fontWeight="bold" anchorX="center">
+              {t.signVabDeckWalkLine1}
+            </Text>
+            <Text position={[0, -0.14, 0.08]} fontSize={0.16} maxWidth={3.75} color="#f8fafc" fontWeight="bold" anchorX="center">
+              {t.signVabDeckWalkLine2}
             </Text>
           </group>
         </group>
 
-        {/* Signboard at Top of 3rd Stair Flight Arrival (deck local X = +0.7, Z = -11.9) */}
-        <Text position={[0.7, 2.55, -11.8]} fontSize={0.28} color="#eab308" fontWeight="bold" anchorX="center">
-          3º PISO (24m) • ÁREA DE INVESTIGAÇÃO & CONTROLE DE MISSÃO
-        </Text>
+        {/* Dedicated Framed Signboard at 3rd Floor Investigation Area (Clear of Skybridge Arch) */}
+        <group position={[3.5, 2.95, -11.7]}>
+          <mesh>
+            <boxGeometry args={[4.8, 0.88, 0.10]} />
+            <meshStandardMaterial color="#0f172a" metalness={0.85} roughness={0.25} />
+          </mesh>
+          <mesh position={[0, 0.41, 0.04]}>
+            <boxGeometry args={[4.65, 0.04, 0.04]} />
+            <meshBasicMaterial color="#eab308" />
+          </mesh>
+          <Text position={[0, 0.14, 0.07]} fontSize={0.20} maxWidth={4.4} color="#eab308" fontWeight="bold" anchorX="center">
+            {t.signVabLevel3Line1}
+          </Text>
+          <Text position={[0, -0.15, 0.07]} fontSize={0.17} maxWidth={4.4} color="#f8fafc" fontWeight="bold" anchorX="center">
+            {t.signVabLevel3Line2}
+          </Text>
+        </group>
 
         {/* Exterior Panoramic Observation Window looking towards Crawlerway & Launch Pad */}
         <group position={[-11.9, 2.8, 0]} rotation={[0, -Math.PI / 2, 0]}>
