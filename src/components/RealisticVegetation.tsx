@@ -1069,49 +1069,46 @@ export function DetailedCoastalTree({
 // ---------------------------------------------------------------------------
 // 5. COMPLETE EARTH VEGETATION ECOSYSTEM
 // ---------------------------------------------------------------------------
+export const EARTH_TREES: ReadonlyArray<{
+  type: 'palm' | 'shade';
+  pos: [number, number, number];
+  scale: number;
+  rot: number;
+  curveDir?: number;
+}> = [
+  // 1. Prime Atlantic Beach Palm Line (safely along the beach dunes outside the launch complex)
+  { type: 'palm', pos: [-20, 0, -68], scale: 1.20, rot: 0.3, curveDir: -1 },
+  { type: 'palm', pos: [-22, 0, -48], scale: 1.30, rot: 1.2, curveDir: -1 },
+  { type: 'palm', pos: [-21, 0, -32], scale: 1.25, rot: 1.9, curveDir: -1 },
+  { type: 'palm', pos: [-21, 0, 32], scale: 1.25, rot: 0.8, curveDir: -1 },
+  { type: 'palm', pos: [-22, 0, 52], scale: 1.30, rot: 2.7, curveDir: -1 },
+  { type: 'palm', pos: [-20, 0, 72], scale: 1.18, rot: 1.5, curveDir: -1 },
+
+  // 2. North Green Belt (framing the launch complex outside blast radius)
+  { type: 'shade', pos: [32, 0, -52], scale: 1.25, rot: 0.5 },
+  { type: 'shade', pos: [54, 0, -58], scale: 1.35, rot: 2.2 },
+  { type: 'palm', pos: [76, 0, -48], scale: 1.20, rot: 1.8, curveDir: 1 },
+  { type: 'shade', pos: [98, 0, -54], scale: 1.30, rot: 3.1 },
+
+  // 3. South Green Belt (outside blast radius)
+  { type: 'shade', pos: [32, 0, 54], scale: 1.30, rot: 1.1 },
+  { type: 'shade', pos: [58, 0, 58], scale: 1.40, rot: 2.8 },
+  { type: 'palm', pos: [82, 0, 52], scale: 1.25, rot: 0.9, curveDir: 1 },
+  { type: 'shade', pos: [106, 0, 56], scale: 1.35, rot: 2.0 },
+
+  // 4. Crawlerway Roadside Palms (lining the approach from VAB)
+  { type: 'palm', pos: [45, 0, -28], scale: 1.10, rot: 0.4, curveDir: 1 },
+  { type: 'palm', pos: [45, 0, 28], scale: 1.10, rot: 2.5, curveDir: -1 },
+  { type: 'palm', pos: [75, 0, -28], scale: 1.15, rot: 1.6, curveDir: 1 },
+  { type: 'palm', pos: [75, 0, 28], scale: 1.15, rot: 3.4, curveDir: -1 },
+
+  // 5. Distant Horizon Trees
+  { type: 'shade', pos: [130, 0, -68], scale: 1.45, rot: 0.7 },
+  { type: 'shade', pos: [135, 0, 68], scale: 1.45, rot: 1.9 },
+];
+
 export function CompleteEarthVegetation() {
-  const trees = useMemo(() => {
-    const list: Array<{
-      type: 'palm' | 'shade';
-      pos: [number, number, number];
-      scale: number;
-      rot: number;
-      curveDir?: number;
-    }> = [
-      // 1. Prime Atlantic Beach Palm Line (safely along the beach dunes outside the launch complex)
-      { type: 'palm', pos: [-20, 0, -68], scale: 1.20, rot: 0.3, curveDir: -1 },
-      { type: 'palm', pos: [-22, 0, -48], scale: 1.30, rot: 1.2, curveDir: -1 },
-      { type: 'palm', pos: [-21, 0, -32], scale: 1.25, rot: 1.9, curveDir: -1 },
-      // Notice: Removed [-11, 0, 2] which was inside the launch pad!
-      { type: 'palm', pos: [-21, 0, 32], scale: 1.25, rot: 0.8, curveDir: -1 },
-      { type: 'palm', pos: [-22, 0, 52], scale: 1.30, rot: 2.7, curveDir: -1 },
-      { type: 'palm', pos: [-20, 0, 72], scale: 1.18, rot: 1.5, curveDir: -1 },
-
-      // 2. North Green Belt (framing the launch complex outside blast radius)
-      { type: 'shade', pos: [32, 0, -52], scale: 1.25, rot: 0.5 },
-      { type: 'shade', pos: [54, 0, -58], scale: 1.35, rot: 2.2 },
-      { type: 'palm', pos: [76, 0, -48], scale: 1.20, rot: 1.8, curveDir: 1 },
-      { type: 'shade', pos: [98, 0, -54], scale: 1.30, rot: 3.1 },
-
-      // 3. South Green Belt (outside blast radius)
-      { type: 'shade', pos: [32, 0, 54], scale: 1.30, rot: 1.1 },
-      { type: 'shade', pos: [58, 0, 58], scale: 1.40, rot: 2.8 },
-      { type: 'palm', pos: [82, 0, 52], scale: 1.25, rot: 0.9, curveDir: 1 },
-      { type: 'shade', pos: [106, 0, 56], scale: 1.35, rot: 2.0 },
-
-      // 4. Crawlerway Roadside Palms (lining the approach from VAB)
-      { type: 'palm', pos: [45, 0, -28], scale: 1.10, rot: 0.4, curveDir: 1 },
-      { type: 'palm', pos: [45, 0, 28], scale: 1.10, rot: 2.5, curveDir: -1 },
-      { type: 'palm', pos: [75, 0, -28], scale: 1.15, rot: 1.6, curveDir: 1 },
-      { type: 'palm', pos: [75, 0, 28], scale: 1.15, rot: 3.4, curveDir: -1 },
-
-      // 5. Distant Horizon Trees
-      { type: 'shade', pos: [130, 0, -68], scale: 1.45, rot: 0.7 },
-      { type: 'shade', pos: [135, 0, 68], scale: 1.45, rot: 1.9 },
-    ];
-
-    return list;
-  }, []);
+  const trees = EARTH_TREES;
 
   return (
     <group>

@@ -9,6 +9,9 @@ import {
   CanvasTexture,
   MeshStandardMaterial,
   MeshBasicMaterial,
+  Sprite,
+  SpriteMaterial,
+  AdditiveBlending,
   SRGBColorSpace,
   RepeatWrapping,
   DoubleSide,
@@ -18,7 +21,7 @@ import {
 import { RocketModel } from './RocketModel';
 import { OrbitalCapsule } from './OrbitalCapsule';
 import { RealisticEarthGlobe } from './RealisticEarthGlobe';
-import { RealisticSun, RealisticSaturnGlobe } from './RealisticCelestialBodies';
+import { RealisticSun, RealisticSaturnGlobe, getSunFarGlowTexture } from './RealisticCelestialBodies';
 import { Text, Stars, Sphere, useKeyboardControls, Instances, Instance } from '@react-three/drei';
 import { playSolarEvaporationSound } from '../audio';
 import { getPlanetName } from '../utils/i18n';
@@ -38,6 +41,91 @@ interface CosmicPlanet extends PlanetInfo {
   visualRadius: number;
   atmosphereColor: string;
   hasRings?: boolean;
+}
+
+const _planetBeaconCamPos = new Vector3();
+const _planetBeaconWorldPos = new Vector3();
+
+function PlanetDistantBeacon({
+  planet,
+  isExoplanet,
+}: {
+  planet: CosmicPlanet;
+  isExoplanet: boolean;
+}) {
+  const spriteRef = useRef<Sprite>(null);
+  const spriteMatRef = useRef<SpriteMaterial>(null);
+  const labelGroupRef = useRef<Group>(null);
+  const glowTex = useMemo(() => getSunFarGlowTexture(), []);
+
+  useFrame((state) => {
+    _planetBeaconCamPos.copy(state.camera.position);
+    _planetBeaconWorldPos.copy(planet.pos);
+    const dist = _planetBeaconCamPos.distanceTo(_planetBeaconWorldPos);
+
+    if (spriteRef.current && spriteMatRef.current) {
+      // Keep a crisp luminous star-beacon visible at extreme orbital distances, fading smoothly up close
+      const farRatio = MathUtils.clamp((dist - planet.visualRadius * 2.2) / (planet.visualRadius * 6.0), 0, 1);
+      const beaconScale = Math.max(planet.visualRadius * 2.6, dist * 0.036);
+      spriteRef.current.scale.set(beaconScale, beaconScale, 1);
+      spriteMatRef.current.opacity = farRatio * 0.88;
+      spriteRef.current.visible = farRatio > 0.02;
+    }
+
+    if (labelGroupRef.current) {
+      labelGroupRef.current.lookAt(_planetBeaconCamPos);
+      // Gently boost label legibility from afar while keeping natural proportions up close
+      const labelScale = MathUtils.clamp(dist / Math.max(1, planet.visualRadius * 14), 1.0, 4.5);
+      labelGroupRef.current.scale.setScalar(labelScale);
+    }
+  });
+
+  const titleSize = Math.max(38, planet.visualRadius * 0.16);
+  const subSize = Math.max(20, planet.visualRadius * 0.085);
+
+  return (
+    <>
+      {glowTex && (
+        <sprite ref={spriteRef} frustumCulled={false}>
+          <spriteMaterial
+            ref={spriteMatRef}
+            map={glowTex}
+            color={planet.atmosphereColor}
+            transparent
+            opacity={0.75}
+            blending={AdditiveBlending}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </sprite>
+      )}
+
+      <group ref={labelGroupRef} position={[0, planet.visualRadius * 1.32, 0]} frustumCulled={false}>
+        <Text
+          fontSize={titleSize}
+          color="#ffffff"
+          fontWeight="bold"
+          outlineWidth={1.2}
+          outlineColor="#020617"
+          frustumCulled={false}
+        >
+          {planet.name.toUpperCase()}
+        </Text>
+
+        <Text
+          position={[0, -titleSize * 1.18, 0]}
+          fontSize={subSize}
+          color={planet.atmosphereColor}
+          fontWeight="bold"
+          outlineWidth={0.8}
+          outlineColor="#020617"
+          frustumCulled={false}
+        >
+          {isExoplanet ? 'EXOPLANETA CONFIRMADO (NASA)' : `GRAVIDADE: ${(planet.gravity / 9.8).toFixed(2)}G`}
+        </Text>
+      </group>
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -236,18 +324,18 @@ export function SpaceScene() {
     [PLANETS.length]
   );
 
-  // Procedural Asteroid Field Belt (Orbital ring between Mars and Jupiter: 9,800m to 12,000m)
+  // Procedural Asteroid Field Belt (Orbital ring between Mars and Jupiter: 20,000m to 23,200m)
   const asteroids = useMemo(() => {
     const arr = [];
     for (let i = 0; i < 500; i++) {
-      const distance = 9800 + Math.random() * 2200;
+      const distance = 20000 + Math.random() * 3200;
       const theta = Math.random() * Math.PI * 2;
 
       const x = distance * Math.cos(theta);
-      const y = (Math.random() - 0.5) * 650;
+      const y = (Math.random() - 0.5) * 900;
       const z = distance * Math.sin(theta);
 
-      const scale = 12 + Math.random() * 38;
+      const scale = 16 + Math.random() * 44;
       arr.push({ x, y, z, scale, rx: Math.random() * Math.PI, ry: Math.random() * Math.PI });
     }
     return arr;
@@ -256,10 +344,10 @@ export function SpaceScene() {
   // Distant Cosmic Galactic Nebulae
   const nebulaClouds = useMemo(() => {
     return [
-      { pos: [-18000, 3200, -14000], col: '#8b5cf6', scale: 2800 },
-      { pos: [16000, -2800, -19000], col: '#06b6d4', scale: 3200 },
-      { pos: [12000, 4500, 16000], col: '#ec4899', scale: 2900 },
-      { pos: [-16000, -3500, 15000], col: '#eab308', scale: 2600 },
+      { pos: [-42000, 5200, -34000], col: '#8b5cf6', scale: 5200 },
+      { pos: [38000, -4800, -44000], col: '#06b6d4', scale: 6000 },
+      { pos: [32000, 6500, 38000], col: '#ec4899', scale: 5400 },
+      { pos: [-36000, -5500, 34000], col: '#eab308', scale: 4800 },
     ];
   }, []);
 
@@ -511,11 +599,11 @@ export function SpaceScene() {
     // Check distance to the Sun (0, 0, 0): thermal proximity warning & evaporation respawn
     const distToSun = rocketPos.length();
     const solarHeatPct =
-      distToSun < 2950
-        ? Math.round(MathUtils.clamp((2950 - distToSun) / (2950 - 2100), 0, 1) * 100)
+      distToSun < 6200
+        ? Math.round(MathUtils.clamp((6200 - distToSun) / (6200 - 4350), 0, 1) * 100)
         : 0;
 
-    if (!evaporatingRef.current && distToSun < 2100) {
+    if (!evaporatingRef.current && distToSun < 4350) {
       evaporatingRef.current = true;
       evapTimerRef.current = 0;
       playSolarEvaporationSound();
@@ -572,10 +660,10 @@ export function SpaceScene() {
       <directionalLight position={[1000, 1500, 1000]} intensity={3.2} />
 
       {/* Deep Cosmos Multi-Layer Starfield */}
-      <Stars radius={35000} depth={10000} count={12000} factor={8} saturation={0.2} fade speed={0.3} />
+      <Stars radius={85000} depth={25000} count={14000} factor={10} saturation={0.2} fade speed={0.3} />
 
-      {/* Radiant Central Star (Animated Photosphere, Solar Flares & Corona) at (0, 0, 0) */}
-      <RealisticSun radius={1750} />
+      {/* Radiant Central Star (4x Jupiter Scale: Animated Photosphere, Solar Flares & 360° Corona) at (0, 0, 0) */}
+      <RealisticSun radius={3680} />
 
       {/* Distant Colorful Galactic Nebulae */}
       {nebulaClouds.map((neb, idx) => (
@@ -610,7 +698,7 @@ export function SpaceScene() {
         const isExoplanet = p.type === 'exoplanet';
 
         return (
-          <group key={p.id} position={p.pos}>
+          <group key={p.id} position={p.pos} frustumCulled={false}>
             {/* Primary Planetary Sphere with Specialized Realism Textures */}
             {isEarth ? (
               <RealisticEarthGlobe
@@ -622,7 +710,7 @@ export function SpaceScene() {
                 segments={64}
               />
             ) : isJupiter ? (
-              <Sphere args={[p.visualRadius, 64, 64]}>
+              <Sphere args={[p.visualRadius, 64, 64]} frustumCulled={false}>
                 <meshStandardMaterial
                   map={jupiterMap || undefined}
                   color="#ffffff"
@@ -637,7 +725,7 @@ export function SpaceScene() {
                 planetWorldPos={[p.pos.x, p.pos.y, p.pos.z]}
               />
             ) : isMars ? (
-              <Sphere args={[p.visualRadius, 48, 48]}>
+              <Sphere args={[p.visualRadius, 48, 48]} frustumCulled={false}>
                 <meshStandardMaterial
                   map={marsMap || undefined}
                   color="#ffffff"
@@ -646,7 +734,7 @@ export function SpaceScene() {
                 />
               </Sphere>
             ) : isVenus ? (
-              <Sphere args={[p.visualRadius, 48, 48]}>
+              <Sphere args={[p.visualRadius, 48, 48]} frustumCulled={false}>
                 <meshStandardMaterial
                   map={venusMap || undefined}
                   color="#ffffff"
@@ -655,7 +743,7 @@ export function SpaceScene() {
                 />
               </Sphere>
             ) : (
-              <Sphere args={[p.visualRadius, 48, 48]}>
+              <Sphere args={[p.visualRadius, 48, 48]} frustumCulled={false}>
                 <meshStandardMaterial
                   color={p.color || '#e2e8f0'}
                   metalness={0.15}
@@ -666,11 +754,11 @@ export function SpaceScene() {
 
             {/* Glowing Atmospheric Aura / Translucent Atmosphere Shell (Earth & Saturn use custom Fresnel shaders) */}
             {!isEarth && !isSaturn && (
-              <Sphere args={[p.visualRadius * 1.06, 36, 36]}>
+              <Sphere args={[p.visualRadius * 1.06, 36, 36]} frustumCulled={false}>
                 <meshBasicMaterial
                   color={p.atmosphereColor}
                   transparent
-                  opacity={0.20}
+                  opacity={0.22}
                   depthWrite={false}
                 />
               </Sphere>
@@ -678,34 +766,14 @@ export function SpaceScene() {
 
             {/* Exoplanet Orbital Energy Ring */}
             {isExoplanet && p.hasRings && (
-              <mesh rotation={[Math.PI / 2.5, 0.4, 0]}>
+              <mesh rotation={[Math.PI / 2.5, 0.4, 0]} frustumCulled={false}>
                 <ringGeometry args={[p.visualRadius * 1.25, p.visualRadius * 1.85, 48]} />
                 <meshBasicMaterial color="#a855f7" side={DoubleSide} transparent opacity={0.65} />
               </mesh>
             )}
 
-            {/* High-Legibility Planetary Identification & NASA Data HUD */}
-            <Text
-              position={[0, p.visualRadius * 1.25, 0]}
-              fontSize={Math.max(34, p.visualRadius * 0.16)}
-              color="#ffffff"
-              fontWeight="bold"
-              outlineWidth={0.8}
-              outlineColor="#020617"
-            >
-              {p.name.toUpperCase()}
-            </Text>
-
-            <Text
-              position={[0, p.visualRadius * 1.25 - Math.max(34, p.visualRadius * 0.16) * 1.2, 0]}
-              fontSize={Math.max(18, p.visualRadius * 0.085)}
-              color={p.atmosphereColor}
-              fontWeight="bold"
-              outlineWidth={0.5}
-              outlineColor="#020617"
-            >
-              {isExoplanet ? 'EXOPLANETA CONFIRMADO (NASA)' : `GRAVIDADE: ${(p.gravity / 9.8).toFixed(2)}G`}
-            </Text>
+            {/* Long-Range Planetary Beacon & Camera-Facing HUD Identification */}
+            <PlanetDistantBeacon planet={p} isExoplanet={isExoplanet} />
           </group>
         );
       })}

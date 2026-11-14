@@ -64,10 +64,10 @@ export const BackpackMapTab = React.memo(function BackpackMapTab() {
   if (scene === 'space') {
     const viewSize = 360;
     const halfView = viewSize / 2;
-    const rangeMeters = spaceZoom === 'inner' ? 10500 : spaceZoom === 'solar' ? 28000 : 40000;
+    const rangeMeters = spaceZoom === 'inner' ? 20500 : spaceZoom === 'solar' ? 49000 : 66000;
     const scale = (halfView - 16) / rangeMeters;
 
-    const shipX = spaceFlightData.shipPos?.[0] ?? 6200;
+    const shipX = spaceFlightData.shipPos?.[0] ?? 13800;
     const shipZ = spaceFlightData.shipPos?.[2] ?? 0;
     const shipYawDeg = ((spaceFlightData.shipYaw ?? 0) * 180) / Math.PI;
 
@@ -87,7 +87,7 @@ export const BackpackMapTab = React.memo(function BackpackMapTab() {
     }, null);
     const targetSvg = targetCosmic ? toSvg(targetCosmic.pos.x, targetCosmic.pos.z) : null;
 
-    const orbitRadii = [3550, 5000, 6200, 8400, 14200, 18000, 22000, 25800];
+    const orbitRadii = [8200, 10800, 13800, 17500, 26800, 33200, 39600, 45800];
 
     return (
       <div className="flex flex-col gap-2.5 text-xs">
@@ -160,15 +160,15 @@ export const BackpackMapTab = React.memo(function BackpackMapTab() {
               );
             })}
 
-            {/* Asteroid Belt (9,800..12,000m) */}
-            {12000 * scale < halfView + 30 && (
+            {/* Asteroid Belt (20,000..23,200m) */}
+            {23200 * scale < halfView + 30 && (
               <circle
                 cx={halfView}
                 cy={halfView}
-                r={10900 * scale}
+                r={21600 * scale}
                 fill="none"
                 stroke="rgba(168,162,158,0.22)"
-                strokeWidth={Math.max(3, 2200 * scale)}
+                strokeWidth={Math.max(3, 3200 * scale)}
                 strokeDasharray="1.5 3.5"
               />
             )}
@@ -177,7 +177,7 @@ export const BackpackMapTab = React.memo(function BackpackMapTab() {
             <circle
               cx={halfView}
               cy={halfView}
-              r={Math.max(10, 2100 * scale)}
+              r={Math.max(12, 3680 * scale)}
               fill="url(#sunGlow)"
               className="cursor-pointer"
               onClick={() =>

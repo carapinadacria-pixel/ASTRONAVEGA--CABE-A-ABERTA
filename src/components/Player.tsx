@@ -8,7 +8,7 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { RigidBody, CapsuleCollider, RapierRigidBody, useRapier } from '@react-three/rapier';
 import { AstronautCharacter } from './AstronautCharacter';
 import { carVisualGroups } from './RealisticCars';
-import { SUIT_TABLE_POS, MOON_FLAG_SPOT_POS } from './StoryMissionProps';
+import { SUIT_TABLE_POS, MOON_FLAG_SPOT_POS, companionPassengerSync } from './StoryMissionProps';
 import {
   playWaterSplashSound,
   playWaterWadeSound,
@@ -19,6 +19,7 @@ import {
   playAstronautDeathSound,
 } from '../audio';
 import { getOceanWaveHeight } from './CoastalOcean';
+import { EARTH_TREES } from './RealisticVegetation';
 
 interface PlayerProps {
   onAction: (action: string) => void;
@@ -239,8 +240,9 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
   const smoothedCornerSteerRef = useRef<number>(0);
 
   // Swept OBB & Perimeter Obstacle Collision Check for Driveable Vehicles:
-  // Tests 7 perimeter points of the car (front bumper left/center/right, mid-sides, rear bumper left/right)
-  // against all base buildings, walls, pillars, Hangar sliding gate, Rocket pad, EV chargers, and other cars.
+  // Tests 11 perimeter points of the car (front/rear bumpers + dense side rails)
+  // against all base buildings, walls, iron pillars/supports, stairs (Pad + Hangar),
+  // Hangar gate, Earth trees, light poles, EV chargers, and other cars.
   const checkCarObstacleCollision = (
     nx: number,
     nz: number,
@@ -258,9 +260,14 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       [0, halfL],
       [-halfW, halfL],
       [halfW, halfL],
+      [-halfW, halfL * 0.5],
+      [halfW, halfL * 0.5],
       [-halfW, 0],
       [halfW, 0],
+      [-halfW, -halfL * 0.5],
+      [halfW, -halfL * 0.5],
       [-halfW, -halfL],
+      [0, -halfL],
       [halfW, -halfL],
     ];
 
@@ -286,7 +293,7 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       }
     }
 
-    // 2. Check all 7 car perimeter points against static solid obstacles
+    // 2. Check all 12 car perimeter points against static solid obstacles
     for (let i = 0; i < localPoints.length; i++) {
       const [lx, lz] = localPoints[i];
       const px = nx + lx * cosR + lz * sinR;
@@ -295,9 +302,9 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       // A. Ocean Seawall / Coastal Boundary (West X < -23.2)
       if (px < -23.2) return true;
 
-      // B. Launch Pad 39A & Rocket Base (Tightened to exact concrete pad X: -16.2..24.5, Z: -16.2..16.2 + Front Stairs X: 24.5..33.6, Z: -3.2..3.2)
+      // B. Launch Pad 39A & Rocket Base + Full Front Grand Stairs & Steel Piers (Upper + Intermediate + Lower Flight X: 24.5..41.5, Z: -3.25..3.25)
       if (px >= -16.2 && px <= 24.5 && pz >= -16.2 && pz <= 16.2) return true;
-      if (px >= 24.5 && px <= 33.6 && pz >= -3.2 && pz <= 3.2) return true;
+      if (px >= 24.5 && px <= 41.5 && pz >= -3.25 && pz <= 3.25) return true;
 
       // C. Scientific Laboratory Building Shell, Glass Walls & Pillars (X: 201.6..258.4, Z: -91.2..-64.8)
       if (px >= 201.6 && px <= 258.4 && pz >= -91.2 && pz <= -64.8) return true;
@@ -307,31 +314,51 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       if (Math.hypot(px - 196.6, pz - -71.9) < 0.72) return true;
 
       // E. EV Charging Stations at North-West stalls of Parking Lot (X = 222.0 and 232.0, Z = -112.5)
-      // Leaves the West Arterial Road (X = 182..194) and Parking Lot Entrance Curve (X = 182..215) 100% unobstructed!
       if (Math.hypot(px - 222.0, pz - -112.5) < 0.72) return true;
       if (Math.hypot(px - 232.0, pz - -112.5) < 0.72) return true;
 
       // F. VAB Hangar Exterior Walls, Flank Walls, Sliding Gate & Interior Structures (World X ≈ 220..300, Z ≈ -50..50)
-      // North Wall (Z: 48.0..50.6, X: 219.4..300.6)
       if (px >= 219.4 && px <= 300.6 && pz >= 48.0 && pz <= 50.6) return true;
-      // South Wall (Z: -50.6..-48.0, X: 219.4..300.6)
       if (px >= 219.4 && px <= 300.6 && pz >= -50.6 && pz <= -48.0) return true;
-      // East Rear Wall (X: 298.0..300.6, Z: -50.6..50.6)
       if (px >= 298.0 && px <= 300.6 && pz >= -50.6 && pz <= 50.6) return true;
-      // West Left Flank Wall (X: 219.4..222.2, Z: -50.6..-15.8)
       if (px >= 219.4 && px <= 222.2 && pz >= -50.6 && pz <= -15.8) return true;
-      // West Right Flank Wall (X: 219.4..222.2, Z: 15.8..50.6)
       if (px >= 219.4 && px <= 222.2 && pz >= 15.8 && pz <= 50.6) return true;
-      // West Hangar Sliding Blast Gate (X: 219.6..222.0, Z: -16.0..16.0) when gate is closed!
       if (!isHangarDoorOpen && px >= 219.6 && px <= 222.0 && pz >= -16.0 && pz <= 16.0) return true;
-      // Hangar Interior Primary Rocket Stand (X: 270, Z: -18, radius 7.4m) & Secondary Rocket Bay (X: 270, Z: 22, radius 7.4m)
+
+      // Hangar Interior Primary Rocket Stand (X: 270, Z: -18) & Secondary Rocket Bay (X: 270, Z: 22)
       if (Math.hypot(px - 270.0, pz - -18.0) < 7.4) return true;
       if (Math.hypot(px - 270.0, pz - 22.0) < 7.4) return true;
-      // Hangar Interior Support Columns (exact column footprints only; open Hangar floor is 100% clear!)
+
+      // Hangar Interior Structural Steel Columns & Hangar Ground Staircase (Flight 1 + Steel Stringer Frame)
       if (Math.hypot(px - 234.1, pz - -13.0) < 0.85) return true;
       if (Math.hypot(px - 256.9, pz - -13.0) < 0.85) return true;
       if (Math.hypot(px - 234.1, pz - 9.8) < 0.85) return true;
       if (Math.hypot(px - 256.9, pz - 9.8) < 0.85) return true;
+      if (px >= 233.2 && px <= 237.0 && pz >= -28.6 && pz <= -13.0) return true;
+
+      // Hangar Interior Suit Table & Frame (X: 248, Z: 12) + Exterior Gate Control Steel Pedestal (X: 217.8, Z: -17)
+      if (px >= 245.7 && px <= 250.3 && pz >= 10.7 && pz <= 13.3) return true;
+      if (Math.hypot(px - 217.8, pz - -17.0) < 0.55) return true;
+
+      // G. Road & Parking Lot Structural Iron Support Poles (Streetlights & High-Mast Lot Towers)
+      if (Math.hypot(px - 181.0, pz - -30.0) < 0.50) return true;
+      if (Math.hypot(px - 181.0, pz - -55.0) < 0.50) return true;
+      if (Math.hypot(px - 181.0, pz - -90.0) < 0.50) return true;
+      if (Math.hypot(px - 212.0, pz - -49.0) < 0.50) return true;
+      if (Math.hypot(px - 248.0, pz - -49.0) < 0.50) return true;
+      if (Math.hypot(px - 273.0, pz - -75.0) < 0.50) return true;
+      if (Math.hypot(px - 230.0, pz - -135.0) < 0.60) return true;
+      if (Math.hypot(px - 260.0, pz - -135.0) < 0.60) return true;
+      if (Math.hypot(px - 290.0, pz - -135.0) < 0.60) return true;
+
+      // H. All Earth Trees (Coastal Palms & Shade Trees)
+      for (let ti = 0; ti < EARTH_TREES.length; ti++) {
+        const tree = EARTH_TREES[ti];
+        const trunkRadius = (tree.type === 'shade' ? 0.92 : 0.72) * tree.scale;
+        if (Math.hypot(px - tree.pos[0], pz - tree.pos[2]) < trunkRadius) {
+          return true;
+        }
+      }
     }
 
     return false;
@@ -720,26 +747,40 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
         const candidateX = Math.max(-23.0, Math.min(480.0, car.x + Math.sin(car.rot) * car.speed * safeDelta));
         const candidateZ = Math.max(-320.0, Math.min(320.0, car.z + Math.cos(car.rot) * car.speed * safeDelta));
 
-        // Solid Obstacle & Vehicle-to-Vehicle Crash Detection:
-        // Stops on impact with a realistic elastic recoil and metallic crash sound without passing through anything!
-        const hitObstacle = checkCarObstacleCollision(
-          candidateX,
-          candidateZ,
-          car.rot,
-          activeCarId,
-          storeState.carStates,
-          storeState.isHabitatDoorOpen
-        );
+        // Solid Obstacle & Vehicle-to-Vehicle Crash Detection (Swept Midpoint + Endpoint):
+        // Prevents high-speed tunneling through narrow trees, stairs, or steel poles and rebounds cleanly!
+        const midX = (car.x + candidateX) * 0.5;
+        const midZ = (car.z + candidateZ) * 0.5;
+        const hitMid =
+          Math.abs(car.speed) > 10 &&
+          checkCarObstacleCollision(
+            midX,
+            midZ,
+            car.rot,
+            activeCarId,
+            storeState.carStates,
+            storeState.isHabitatDoorOpen
+          );
+        const hitObstacle =
+          hitMid ||
+          checkCarObstacleCollision(
+            candidateX,
+            candidateZ,
+            car.rot,
+            activeCarId,
+            storeState.carStates,
+            storeState.isHabitatDoorOpen
+          );
 
         if (hitObstacle) {
           const impactSpeed = Math.abs(car.speed);
           const reboundSign = car.speed >= 0 ? -1 : 1;
           car.rot = prevRot;
-          const reboundSpeed = reboundSign * Math.min(4.2, impactSpeed * 0.32 + 1.1);
+          const reboundSpeed = reboundSign * Math.min(5.2, impactSpeed * 0.36 + 1.25);
           car.speed = reboundSpeed;
 
-          const bounceX = car.x + Math.sin(car.rot) * reboundSpeed * safeDelta * 1.4;
-          const bounceZ = car.z + Math.cos(car.rot) * reboundSpeed * safeDelta * 1.4;
+          const bounceX = car.x + Math.sin(car.rot) * reboundSpeed * safeDelta * 1.6;
+          const bounceZ = car.z + Math.cos(car.rot) * reboundSpeed * safeDelta * 1.6;
           if (
             !checkCarObstacleCollision(
               bounceX,
@@ -755,7 +796,7 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
           }
 
           const nowMs = performance.now();
-          if (impactSpeed > 0.8 && nowMs - lastCarCrashTime.current > 240) {
+          if (impactSpeed > 0.35 && nowMs - lastCarCrashTime.current > 240) {
             lastCarCrashTime.current = nowMs;
             playCarCrashSound(impactSpeed);
           }
@@ -806,6 +847,25 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
         if (bodyRef.current) {
           bodyRef.current.position.set(0, 0, 0);
           bodyRef.current.rotation.set(0, 0, 0);
+        }
+
+        // Lockstep-sync Companion into front-right passenger seat (X = -0.38, Z = -0.14) in the EXACT SAME frame
+        if (
+          companionPassengerSync.group &&
+          (storeState.gameMode !== 'exploration' || storeState.explorationWithCompanion)
+        ) {
+          const passLocalX = -0.38;
+          const passLocalZ = -0.14;
+          const passWorldX = car.x + passLocalX * cosR + passLocalZ * sinR;
+          const passWorldZ = car.z - passLocalX * sinR + passLocalZ * cosR;
+          companionPassengerSync.group.position.set(passWorldX, seatWorldY, passWorldZ);
+          companionPassengerSync.group.rotation.set(0, car.rot, 0);
+          companionPassengerSync.group.scale.set(0.76, 0.76, 0.76);
+          companionPassengerSync.group.updateMatrixWorld(true);
+          if (companionPassengerSync.bodyGroup) {
+            companionPassengerSync.bodyGroup.position.set(0, 0, 0);
+            companionPassengerSync.bodyGroup.rotation.set(0, 0, 0);
+          }
         }
 
         // Keep player RigidBody & store position locked to the vehicle

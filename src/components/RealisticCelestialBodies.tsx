@@ -192,14 +192,45 @@ const SUN_CORONA_HALO_FRAGMENT = `
 
 const SOLAR_LOOP_ANGLES: [number, number, number, number][] = [
   [0.25, 0.6, 0.4, 1.0],
-  [-0.45, 2.1, -0.3, 0.88],
-  [0.12, 3.8, 0.5, 0.94],
-  [-0.28, 5.1, -0.45, 0.82],
-  [0.52, 1.4, 0.25, 0.78],
+  [-0.45, 2.1, -0.3, 0.92],
+  [0.12, 3.8, 0.5, 0.96],
+  [-0.28, 5.1, -0.45, 0.88],
+  [0.52, 1.4, 0.25, 0.84],
+  [-0.85, 2.9, 0.65, 0.9],
+  [0.95, 4.4, -0.55, 0.86],
 ];
 
-export function RealisticSun({ radius = 1750 }: { radius?: number }) {
+let cachedSunFarGlowTex: CanvasTexture | null = null;
+export function getSunFarGlowTexture(): CanvasTexture | null {
+  if (cachedSunFarGlowTex) return cachedSunFarGlowTex;
+  if (typeof document === 'undefined') return null;
+
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const c = size / 2;
+    const grad = ctx.createRadialGradient(c, c, 0, c, c, c);
+    grad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.18, 'rgba(255, 240, 175, 0.78)');
+    grad.addColorStop(0.45, 'rgba(255, 190, 95, 0.34)');
+    grad.addColorStop(0.75, 'rgba(255, 140, 50, 0.10)');
+    grad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+  }
+  cachedSunFarGlowTex = new CanvasTexture(canvas);
+  cachedSunFarGlowTex.colorSpace = SRGBColorSpace;
+  return cachedSunFarGlowTex;
+}
+
+export function RealisticSun({ radius = 3680 }: { radius?: number }) {
+  const sunRootRef = useRef<Group>(null);
   const flareGroupRef = useRef<Group>(null);
+  const labelRef = useRef<Group>(null);
+  const farGlowTex = useMemo(() => getSunFarGlowTexture(), []);
 
   const photosphereMaterial = useMemo(
     () =>
@@ -231,8 +262,8 @@ export function RealisticSun({ radius = 1750 }: { radius?: number }) {
       new ShaderMaterial({
         uniforms: {
           uColor: { value: new Color('#fbbf24') },
-          uPower: { value: 3.4 },
-          uIntensity: { value: 0.72 },
+          uPower: { value: 3.1 },
+          uIntensity: { value: 0.82 },
         },
         vertexShader: SUN_SURFACE_VERTEX,
         fragmentShader: SUN_CORONA_HALO_FRAGMENT,
@@ -250,8 +281,8 @@ export function RealisticSun({ radius = 1750 }: { radius?: number }) {
       new ShaderMaterial({
         uniforms: {
           uColor: { value: new Color('#f97316') },
-          uPower: { value: 4.5 },
-          uIntensity: { value: 0.42 },
+          uPower: { value: 4.0 },
+          uIntensity: { value: 0.52 },
         },
         vertexShader: SUN_SURFACE_VERTEX,
         fragmentShader: SUN_CORONA_HALO_FRAGMENT,
@@ -271,10 +302,19 @@ export function RealisticSun({ radius = 1750 }: { radius?: number }) {
     if (flareGroupRef.current) {
       flareGroupRef.current.rotation.y += Math.min(delta, 0.05) * 0.015;
     }
+    if (sunRootRef.current) {
+      // Permanent minimum apparent angular size so the Sun never shrinks to a faint speck even at outer exoplanets
+      const camDist = state.camera.position.length();
+      const apparentScale = Math.max(1.0, (camDist * 0.13) / radius);
+      sunRootRef.current.scale.setScalar(apparentScale);
+    }
+    if (labelRef.current) {
+      labelRef.current.lookAt(state.camera.position);
+    }
   });
 
   return (
-    <group position={[0, 0, 0]} frustumCulled={false}>
+    <group ref={sunRootRef} position={[0, 0, 0]} frustumCulled={false}>
       {/* Animated Convective Photosphere with Granulation, Sunspots & Limb Darkening */}
       <mesh material={photosphereMaterial} frustumCulled={false}>
         <sphereGeometry args={[radius, 72, 72]} />
@@ -282,7 +322,7 @@ export function RealisticSun({ radius = 1750 }: { radius?: number }) {
 
       {/* Dynamic Chromospheric Plasma Wisps */}
       <mesh material={chromosphereMaterial} frustumCulled={false}>
-        <sphereGeometry args={[radius * 1.035, 64, 64]} />
+        <sphereGeometry args={[radius * 1.038, 64, 64]} />
       </mesh>
 
       {/* 3D Magnetic Solar Prominence Loops Erupting Around the Limb */}
@@ -294,7 +334,7 @@ export function RealisticSun({ radius = 1750 }: { radius?: number }) {
               <meshBasicMaterial
                 color="#fb923c"
                 transparent
-                opacity={0.55}
+                opacity={0.58}
                 blending={AdditiveBlending}
                 depthWrite={false}
                 toneMapped={false}
@@ -305,28 +345,44 @@ export function RealisticSun({ radius = 1750 }: { radius?: number }) {
       </group>
 
       {/* High-Power Omnidirectional Solar Illumination */}
-      <pointLight intensity={26} distance={150000} decay={0.25} color="#fff1db" />
+      <pointLight intensity={36} distance={280000} decay={0.16} color="#fff1db" />
 
       {/* Volumetric Inner Gold Corona Halo */}
       <mesh material={innerCoronaMaterial} frustumCulled={false}>
-        <sphereGeometry args={[radius * 1.28, 48, 48]} />
+        <sphereGeometry args={[radius * 1.32, 48, 48]} />
       </mesh>
 
       {/* Extended Amber-Orange Outer Corona Bloom */}
       <mesh material={outerCoronaMaterial} frustumCulled={false}>
-        <sphereGeometry args={[radius * 1.85, 36, 36]} />
+        <sphereGeometry args={[radius * 1.95, 36, 36]} />
       </mesh>
 
-      <Text
-        position={[0, radius * 1.24, 0]}
-        fontSize={155}
-        color="#fef3c7"
-        outlineWidth={3}
-        outlineColor="#000000"
-        frustumCulled={false}
-      >
-        SOL • CENTRO DO SISTEMA SOLAR
-      </Text>
+      {/* 360-Degree Distance-Invariant Corona Flare Sprite (Visible from any angle & farthest exoplanets) */}
+      {farGlowTex && (
+        <sprite scale={[radius * 4.6, radius * 4.6, 1]} frustumCulled={false}>
+          <spriteMaterial
+            map={farGlowTex}
+            color="#fde047"
+            transparent
+            opacity={0.85}
+            blending={AdditiveBlending}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </sprite>
+      )}
+
+      <group ref={labelRef} position={[0, radius * 1.18, 0]} frustumCulled={false}>
+        <Text
+          fontSize={radius * 0.085}
+          color="#fef3c7"
+          outlineWidth={4}
+          outlineColor="#000000"
+          frustumCulled={false}
+        >
+          SOL • CENTRO DO SISTEMA SOLAR
+        </Text>
+      </group>
     </group>
   );
 }

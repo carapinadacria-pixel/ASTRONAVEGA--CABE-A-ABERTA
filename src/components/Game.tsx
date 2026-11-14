@@ -490,7 +490,7 @@ function createDummyRenderer(canvas: HTMLCanvasElement): any {
               });
             }
           }}
-          camera={{ fov: 65, near: 0.2, far: scene === 'surface' ? 3500 : 180000 }}
+          camera={{ fov: 65, near: 0.2, far: scene === 'surface' ? 3500 : 360000 }}
         >
           <color attach="background" args={[bgSkyColor]} />
           <Suspense fallback={null}>

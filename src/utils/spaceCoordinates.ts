@@ -22,19 +22,19 @@ export function computeCosmicPlanetPositions(planets: PlanetInfo[]): CosmicPlane
       case 'mercury':
         visualRadius = 180;
         atmosphereColor = '#a8a29e';
-        dist = 3550;
+        dist = 8200;
         angle = 0.45;
         break;
       case 'venus':
         visualRadius = 360;
         atmosphereColor = '#fbbf24';
-        dist = 5000;
+        dist = 10800;
         angle = 1.35;
         break;
       case 'earth':
         visualRadius = 380;
         atmosphereColor = '#38bdf8';
-        dist = 6200;
+        dist = 13800;
         angle = 2.40;
         break;
       case 'moon':
@@ -45,30 +45,30 @@ export function computeCosmicPlanetPositions(planets: PlanetInfo[]): CosmicPlane
           visualRadius,
           atmosphereColor,
           hasRings: false,
-          orbitRadius: 6200,
+          orbitRadius: 13800,
           pos: new Vector3(
-            Math.cos(2.40) * 6200 + 460,
+            Math.cos(2.40) * 13800 + 540,
             45,
-            Math.sin(2.40) * 6200 + 320
+            Math.sin(2.40) * 13800 + 360
           ),
         };
       case 'mars':
         visualRadius = 260;
         atmosphereColor = '#f97316';
-        dist = 8400;
+        dist = 17500;
         angle = 3.65;
         break;
       case 'jupiter':
         visualRadius = 920;
         atmosphereColor = '#d97706';
-        dist = 14200;
+        dist = 26800;
         angle = 4.70;
         break;
       case 'saturn':
         visualRadius = 780;
         atmosphereColor = '#eab308';
         hasRings = true;
-        dist = 18000;
+        dist = 33200;
         angle = 5.60;
         break;
       case 'titan':
@@ -79,37 +79,37 @@ export function computeCosmicPlanetPositions(planets: PlanetInfo[]): CosmicPlane
           visualRadius,
           atmosphereColor,
           hasRings: false,
-          orbitRadius: 18000,
+          orbitRadius: 33200,
           pos: new Vector3(
-            Math.cos(5.60) * 18000 + 820,
+            Math.cos(5.60) * 33200 + 960,
             -60,
-            Math.sin(5.60) * 18000 + 680
+            Math.sin(5.60) * 33200 + 780
           ),
         };
       case 'uranus':
         visualRadius = 520;
         atmosphereColor = '#38bdf8';
         hasRings = true;
-        dist = 22000;
+        dist = 39600;
         angle = 0.95;
         break;
       case 'neptune':
         visualRadius = 500;
         atmosphereColor = '#2563eb';
-        dist = 25800;
+        dist = 45800;
         angle = 2.10;
         break;
       case 'exoplanet':
         visualRadius = 360 + (i * 65) % 280;
         atmosphereColor = '#a855f7';
         hasRings = i % 2 === 0;
-        dist = 29000 + (i * 1400) % 8000;
+        dist = 51000 + (i * 1500) % 10000;
         angle = (i * 1.618) * Math.PI * 2;
         break;
       default:
         visualRadius = 380;
         atmosphereColor = '#60a5fa';
-        dist = 12000;
+        dist = 22000;
     }
 
     return {

@@ -12,6 +12,16 @@ import { UI_TEXT } from '../utils/i18n';
 export const SUIT_TABLE_POS: [number, number, number] = [248, 0.2, 12];
 export const MOON_FLAG_SPOT_POS: [number, number, number] = [8, 0, 16];
 
+// Shared live reference so Player.tsx updates the companion passenger seat in exact lockstep
+// on the exact same frame as the car visual mesh and driver, eliminating any windshield/seat drift.
+export const companionPassengerSync: {
+  group: Group | null;
+  bodyGroup: Group | null;
+} = {
+  group: null,
+  bodyGroup: null,
+};
+
 export function HangarSuitTable() {
   const gameMode = useGameStore((s) => s.gameMode);
   const planetIndex = useGameStore((s) => s.planetIndex);
@@ -165,8 +175,23 @@ export function StoryCompanion() {
   const [actionName, setActionName] = useState<CompanionAction>('idle');
   const actionRef = useRef<CompanionAction>('idle');
 
+  React.useEffect(() => {
+    companionPassengerSync.group = groupRef.current;
+    companionPassengerSync.bodyGroup = bodyGroupRef.current;
+    return () => {
+      if (companionPassengerSync.group === groupRef.current) {
+        companionPassengerSync.group = null;
+      }
+      if (companionPassengerSync.bodyGroup === bodyGroupRef.current) {
+        companionPassengerSync.bodyGroup = null;
+      }
+    };
+  }, [scene, isLaunching, gameMode, explorationWithCompanion]);
+
   useFrame((_, rawDelta) => {
     if (!groupRef.current) return;
+    companionPassengerSync.group = groupRef.current;
+    companionPassengerSync.bodyGroup = bodyGroupRef.current;
     const store = useGameStore.getState();
     if (store.gameMode === 'exploration' && !store.explorationWithCompanion) return;
     const delta = Math.min(rawDelta, 0.05);
@@ -232,7 +257,10 @@ export function StoryCompanion() {
       if (exitedCar) {
         const exitX = exitedCar.x - Math.cos(exitedCar.rot) * 2.15;
         const exitZ = exitedCar.z + Math.sin(exitedCar.rot) * 2.15;
-        posRef.current = [exitX, Math.max(0.2, exitedCar.y + 0.1), exitZ];
+        const exitY = Math.max(store.planetIndex === 0 ? 0.2 : 0.0, exitedCar.y + 0.1);
+        posRef.current = [exitX, exitY, exitZ];
+        groupRef.current.position.set(exitX, exitY, exitZ);
+        groupRef.current.rotation.set(0, exitedCar.rot, 0);
       }
       prevDrivingCarIdRef.current = null;
     }
@@ -624,15 +652,17 @@ export function AnimatedMissionFloorArrows() {
       ];
     }
 
-    // 2. Earth Hangar / Suit Table -> Launch Pad (0, 0) along Crawlerway
+    // 2. Earth Hangar Center -> Hangar Gate (X=220) -> Launch Pad Stairs (X=42) along Crawlerway
     if (planetIndex === 0 && storyStep === 'walk_to_rocket') {
       const exitYaw = Math.atan2(-1, 0); // -PI/2 (-X West toward Pad)
-      const list: FloorArrowPoint[] = [
-        { pos: [236, 0.17, 7], rotY: Math.atan2(196 - 236, -7) },
-        { pos: [216, 0.17, 3.2], rotY: Math.atan2(196 - 216, -3.2) },
-        { pos: [196, 0.17, 0], rotY: exitYaw },
-      ];
-      for (let x = 174; x >= 20; x -= 22) {
+      const list: FloorArrowPoint[] = [];
+      // Inside Hangar center corridor (floor Y = 0.22) leading straight out the West gate
+      for (let x = 258; x >= 226; x -= 8) {
+        list.push({ pos: [x, 0.22, 0], rotY: exitYaw });
+      }
+      // Exterior gate threshold & paved Crawlerway runway (floor Y = 0.17)
+      list.push({ pos: [218, 0.17, 0], rotY: exitYaw });
+      for (let x = 200; x >= 42; x -= 18) {
         list.push({ pos: [x, 0.17, 0], rotY: exitYaw });
       }
       return list;

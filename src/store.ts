@@ -467,7 +467,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     stagingProgress: 0,
     solarHeatPct: 0,
     isEvaporating: false,
-    shipPos: [6200, 0, 0],
+    shipPos: [13800, 0, 0],
     shipYaw: 0,
   },
   setSpaceFlightData: (data) => set((state) => ({
