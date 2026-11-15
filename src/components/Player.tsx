@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Vector3, Group, Quaternion, Color, MathUtils } from 'three';
 import { useGameStore, livePlayerMotion } from '../store';
 import { UI_TEXT } from '../utils/i18n';
-import { useKeyboardControls, OrbitControls } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { RigidBody, CapsuleCollider, RapierRigidBody, useRapier } from '@react-three/rapier';
 import { AstronautCharacter } from './AstronautCharacter';
@@ -162,6 +162,7 @@ const _normal = new Vector3();
 const _slopeTangent = new Vector3();
 const _moveDir = new Vector3();
 const _lookAtPos = new Vector3();
+const _camBackScratch = new Vector3();
 const _upVector = new Vector3(0, 1, 0);
 
 // Pre-allocated Rapier ray definitions to prevent GC freezes on mobile
@@ -192,7 +193,7 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const prevCamPlayerPos = useRef<Vector3 | null>(null);
 
-  const [_, get] = useKeyboardControls();
+  const heldKeysRef = useRef<Set<string>>(new Set());
   const cameraMode = useGameStore((state) => state.cameraMode);
   const isLaunching = useGameStore((state) => state.isLaunching);
   const gravity = useGameStore((state) => state.gravity);
@@ -230,7 +231,6 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
   const isUserOrbiting = useRef<boolean>(false);
   const lastUserOrbitTime = useRef<number>(0);
   const lastCarCrashTime = useRef<number>(0);
-  const lastFuelWarnTime = useRef<number>(0);
   const lastHandledRespawnAt = useRef<number | null>(useGameStore.getState().lastRespawnAt);
   const dyingTimerRef = useRef<number>(0);
   const isDying = useGameStore((state) => state.isDying);
@@ -367,6 +367,9 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
   useEffect(() => {
     const controls = controlsRef.current;
     if (!controls) return;
+    if ((controls as any)._domElementKeyEvents) {
+      (controls as any).stopListenToKeyEvents?.();
+    }
     const onStart = () => {
       isUserOrbiting.current = true;
       lastUserOrbitTime.current = performance.now();
@@ -383,9 +386,109 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
     };
   }, []);
 
+  // Deterministic keyboard input synchronization:
+  // Uses physical e.code + normalized key fallback, prevents HUD button capture on Space/Arrows,
+  // and clears all held keys immediately on window blur, tab switch, or modal open.
+  useEffect(() => {
+    const normalizeKeyCode = (e: KeyboardEvent): string | null => {
+      switch (e.code) {
+        case 'KeyW':
+        case 'ArrowUp':
+          return 'forward';
+        case 'KeyS':
+        case 'ArrowDown':
+          return 'backward';
+        case 'KeyA':
+        case 'ArrowLeft':
+          return 'left';
+        case 'KeyD':
+        case 'ArrowRight':
+          return 'right';
+        case 'Space':
+          return 'jump';
+        case 'ShiftLeft':
+        case 'ShiftRight':
+          return 'sprint';
+      }
+      const k = e.key.toLowerCase();
+      if (k === 'w' || k === 'arrowup') return 'forward';
+      if (k === 's' || k === 'arrowdown') return 'backward';
+      if (k === 'a' || k === 'arrowleft') return 'left';
+      if (k === 'd' || k === 'arrowright') return 'right';
+      if (k === ' ' || k === 'spacebar') return 'jump';
+      if (k === 'shift') return 'sprint';
+      return null;
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      const st = useGameStore.getState();
+      if (st.isUiModalOpen || st.isComputerLibraryOpen || st.appStage !== 'playing') return;
+
+      const mapped = normalizeKeyCode(e);
+      if (!mapped) return;
+
+      if (
+        e.code === 'Space' ||
+        e.code === 'ArrowUp' ||
+        e.code === 'ArrowDown' ||
+        e.code === 'ArrowLeft' ||
+        e.code === 'ArrowRight'
+      ) {
+        e.preventDefault();
+        if (active instanceof HTMLButtonElement) {
+          active.blur();
+        }
+      }
+      heldKeysRef.current.add(mapped);
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      const mapped = normalizeKeyCode(e);
+      if (mapped) {
+        heldKeysRef.current.delete(mapped);
+      }
+      if (!e.shiftKey && (e.code === 'ShiftLeft' || e.code === 'ShiftRight')) {
+        heldKeysRef.current.delete('sprint');
+      }
+    };
+
+    const clearHeldKeys = () => {
+      heldKeysRef.current.clear();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) clearHeldKeys();
+    };
+
+    window.addEventListener('keydown', onKeyDown, { passive: false });
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', clearHeldKeys);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', clearHeldKeys);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      heldKeysRef.current.clear();
+    };
+  }, []);
+
   // Reposition player cleanly when landing on another planet or returning to Earth
   useEffect(() => {
     if (!rb.current || !group.current) return;
+    const cam = camera as any;
+    cam.near = 0.2;
+    cam.far = 3500;
+    cam.updateProjectionMatrix?.();
+
     const spawnPos: [number, number, number] = planetIndex === 0 ? [255, 1.2, 5] : [0, 1.2, 9.5];
     rb.current.setGravityScale(1.0, true);
     rb.current.setTranslation({ x: spawnPos[0], y: spawnPos[1], z: spawnPos[2] }, true);
@@ -475,12 +578,23 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
   useFrame((state, delta) => {
     if (!rb.current || !group.current) return;
 
-    const { forward, backward, left, right, jump, sprint } = get() as any;
     const storeState = useGameStore.getState();
+    const modalsOpen = storeState.isUiModalOpen || storeState.isComputerLibraryOpen;
+    if (modalsOpen && heldKeysRef.current.size > 0) {
+      heldKeysRef.current.clear();
+    }
+    const hk = heldKeysRef.current;
+    const forward = !modalsOpen && hk.has('forward');
+    const backward = !modalsOpen && hk.has('backward');
+    const left = !modalsOpen && hk.has('left');
+    const right = !modalsOpen && hk.has('right');
+    const jump = !modalsOpen && hk.has('jump');
+    const sprint = !modalsOpen && hk.has('sprint');
+
     const joystick = storeState.joystick;
-    const isMobileJump = storeState.mobileJump;
-    const isMobileSprint = storeState.mobileSprint;
-    const safeDelta = Math.min(delta, 0.05);
+    const isMobileJump = !modalsOpen && storeState.mobileJump;
+    const isMobileSprint = !modalsOpen && storeState.mobileSprint;
+    const safeDelta = Math.min(delta, 0.08);
 
     // Tick hydration/oxygen/chamber countdown & handle death fall animation or rocket crash respawn
     storeState.tickLifeSupport(safeDelta);
@@ -664,13 +778,25 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       }
       const car = storeState.carStates[activeCarId];
       if (car) {
-        // Progressive physical torque acceleration (m/s²) & authentic 1:1 speedometer calibration (1 m/s = 3.6 km/h)
-        // Sedan/SUV/Convertible: 36.2 m/s (130 km/h normal, 162 km/h turbo); Supercar: 47.2 m/s (170 km/h normal, 212 km/h turbo)
-        const maxCarSpeed = (car.type === 'supercar' ? 47.2 : 36.2) * (isSprintKey ? 1.25 : 1.0);
-        const engineAccel = (car.type === 'supercar' ? 14.5 : 11.2) * (isSprintKey ? 1.30 : 1.0);
-        const reverseAccel = 9.5;
-        const brakeDecel = 28.0;
-        const coastDecel = 5.2;
+        // Realistic progressive automotive kinematics (1 m/s = 3.6 km/h; 200 km/h = 55.56 m/s for standard cars, 230 km/h = 63.89 m/s for supercars)
+        const baseMaxSpeed =
+          car.type === 'supercar'
+            ? 63.89 // 230 km/h
+            : 55.56; // 200 km/h (convertible, suv, sedan)
+        const baseEngineAccel =
+          car.type === 'supercar'
+            ? 9.4 // Progressive launch up to 230 km/h
+            : car.type === 'convertible'
+            ? 7.0 // Progressive launch up to 200 km/h
+            : car.type === 'suv'
+            ? 6.1 // Progressive launch up to 200 km/h
+            : 6.6; // Progressive launch up to 200 km/h (sedan)
+
+        const maxCarSpeed = baseMaxSpeed;
+        const engineAccel = baseEngineAccel * (isSprintKey ? 1.22 : 1.0);
+        const reverseAccel = 4.8;
+        const brakeDecel = 14.5;
+        const coastDecel = 3.2;
 
         const kbForward = (forward ? 1 : 0) - (backward ? 1 : 0);
         const kbRight = (right ? 1 : 0) - (left ? 1 : 0);
@@ -697,8 +823,9 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
             car.speed = Math.min(maxCarSpeed, car.speed + brakeDecel * safeDelta);
           } else {
             const targetCarSpeed = throttle * maxCarSpeed;
-            // Progressive torque curve: strong launch torque that tapers near top speed
-            const torqueFactor = 1.0 - Math.min(0.55, (car.speed / maxCarSpeed) * 0.55);
+            // Progressive torque & aerodynamic drag curve: natural launch tapering smoothly across gears
+            const speedRatio = Math.min(1.0, Math.max(0, car.speed) / maxCarSpeed);
+            const torqueFactor = 1.0 - Math.min(0.52, speedRatio * 0.52);
             const step = engineAccel * torqueFactor * safeDelta;
             if (car.speed < targetCarSpeed) {
               car.speed = Math.min(targetCarSpeed, car.speed + step);
@@ -711,7 +838,7 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
             // Pressing Down/S while moving forward engages strong physical brakes first!
             car.speed = Math.max(0, car.speed - brakeDecel * safeDelta);
           } else {
-            const maxRevSpeed = maxCarSpeed * 0.38;
+            const maxRevSpeed = Math.min(11.1, maxCarSpeed * 0.30); // Realistic ~35-40 km/h max reverse
             const targetRevSpeed = throttle * maxRevSpeed;
             const step = reverseAccel * safeDelta;
             if (car.speed > targetRevSpeed) {
@@ -991,8 +1118,11 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       }
     }
 
-    if ((camera as any).fov !== 60) {
-      (camera as any).fov = 60;
+    const cam = camera as any;
+    if (cam.fov !== 60 || cam.far !== 3500 || cam.near !== 0.2) {
+      cam.fov = 60;
+      cam.near = 0.2;
+      cam.far = 3500;
       camera.updateProjectionMatrix();
     }
     camera.up.set(0, 1, 0);
@@ -1006,11 +1136,11 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
 
     // -----------------------------------------------------------
     // RESPONSIVE PROPORTIONAL KINEMATICS: FEMALE & MALE ASTRONAUTS
-    // Walk by default; Sprint when Run button or Shift is active
+    // Walk by default (natural human stride); Sprint when Run button or Shift is active
     // -----------------------------------------------------------
     const acceleration = isFemale ? 130 : 125;
-    const maxWalkSpeed = isFemale ? 6.4 : 6.6;
-    const maxRunSpeed = isFemale ? 16.0 : 16.5;
+    const maxWalkSpeed = isFemale ? 3.8 : 4.0;
+    const maxRunSpeed = isFemale ? 9.5 : 9.8;
     const baseTargetSpeed = isRunning ? maxRunSpeed : maxWalkSpeed;
     const analogFactor = isRunning
       ? Math.max(0.85, analogMagnitude)
@@ -1097,8 +1227,8 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       storeState.setIsNearFlagSpot(nearFlagSpotNow);
     }
 
-    // Proximity & Touch Detection for Rocket / Planetary Capsule Lander
-    // Astronaut must be genuinely close to the capsule lander to board with [R] or by touching it
+    // Proximity Detection for Rocket / Planetary Capsule Lander
+    // Boarding is strictly via [R] key or the HUD Board Button (walking/touching does NOT auto-board)
     const rocketHorizDist = Math.hypot(playerPos.x, playerPos.z);
     const isNearRocketNow =
       planetIndex === 0
@@ -1107,43 +1237,6 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
     if (isNearRocketNow !== prevNearRocket.current) {
       prevNearRocket.current = isNearRocketNow;
       storeState.setIsNearRocket(isNearRocketNow);
-    }
-
-    // Auto-board rocket when astronaut walks up and touches the rocket base / lander hull
-    const isTouchingRocket =
-      planetIndex === 0
-        ? rocketHorizDist < 5.7 && playerPos.y >= 4.2 && isMoving
-        : rocketHorizDist < 3.15 && isMoving;
-    if (isTouchingRocket && !storeState.isLaunching) {
-      if (planetIndex === 0) {
-        if (storeState.gameMode === 'story' && !storeState.hasSpacesuit) {
-          const nowMs = performance.now();
-          if (nowMs - lastFuelWarnTime.current > 2500) {
-            lastFuelWarnTime.current = nowMs;
-            storeState.setLaunchFailureMsg(UI_TEXT[storeState.language].needSuitBeforeRocket);
-          }
-        } else if (storeState.rocketFuel <= 0) {
-          const nowMs = performance.now();
-          if (nowMs - lastFuelWarnTime.current > 2500) {
-            lastFuelWarnTime.current = nowMs;
-            storeState.setLaunchFailureMsg(UI_TEXT[storeState.language].noFuelBeforeLaunch);
-          }
-        } else {
-          const f = storeState.rocketFuel;
-          storeState.setLaunchFailureMsg(null);
-          storeState.setLaunchTelemetry({
-            countdown: 5,
-            fuel: Math.round(f),
-            speed: 0,
-            altitude: 0,
-            weightTons: Math.round(420 + f * 25.5),
-            status: 'countdown',
-          });
-          storeState.setLaunching(true);
-        }
-      } else {
-        storeState.setLaunching(true);
-      }
     }
 
     // Proximity to Driveable Cars check (within 4.4m on Earth surface)
@@ -1165,14 +1258,15 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       }
 
       // Proximity to Supercomputers & Research Area Computers (Hangar & Laboratory)
+      const isEnLang = storeState.language === 'en';
       const computerTerminals: { x: number; y: number; z: number; radius: number; title: string }[] = [
-        { x: 239.3, y: 24.0, z: 4.6, radius: 6.2, title: 'Computadores de Investigação do Hangar (3º Piso)' },
-        { x: 252.3, y: 24.0, z: 4.6, radius: 6.2, title: 'Computadores de Investigação do Hangar (3º Piso)' },
-        { x: 254.0, y: 0.0, z: -18.0, radius: 5.8, title: 'Supercomputador de Telemetria do Hangar' },
-        { x: 243.0, y: 0.0, z: 3.5, radius: 4.2, title: 'Computador de Diagnóstico do Hangar' },
-        { x: 261.5, y: 0.0, z: 16.5, radius: 4.2, title: 'Computador de Investigação do Hangar' },
-        { x: 225.5, y: 0.0, z: -88.5, radius: 7.2, title: 'Supercomputador de Dinâmica Orbital GGPEN' },
-        { x: 214.0, y: 10.5, z: -84.0, radius: 6.5, title: 'Computadores de Telemetria e Investigação (2º Piso Lab)' },
+        { x: 239.3, y: 24.0, z: 4.6, radius: 6.2, title: isEnLang ? 'Hangar Research Computers (3rd Floor)' : 'Computadores de Investigação do Hangar (3º Piso)' },
+        { x: 252.3, y: 24.0, z: 4.6, radius: 6.2, title: isEnLang ? 'Hangar Research Computers (3rd Floor)' : 'Computadores de Investigação do Hangar (3º Piso)' },
+        { x: 254.0, y: 0.0, z: -18.0, radius: 5.8, title: isEnLang ? 'Hangar Telemetry Supercomputer' : 'Supercomputador de Telemetria do Hangar' },
+        { x: 243.0, y: 0.0, z: 3.5, radius: 4.2, title: isEnLang ? 'Hangar Diagnostics Computer' : 'Computador de Diagnóstico do Hangar' },
+        { x: 261.5, y: 0.0, z: 16.5, radius: 4.2, title: isEnLang ? 'Hangar Research Terminal' : 'Computador de Investigação do Hangar' },
+        { x: 225.5, y: 0.0, z: -88.5, radius: 7.2, title: isEnLang ? 'GGPEN Orbital Dynamics Supercomputer' : 'Supercomputador de Dinâmica Orbital GGPEN' },
+        { x: 214.0, y: 10.5, z: -84.0, radius: 6.5, title: isEnLang ? 'Telemetry & Research Computers (Lab 2nd Floor)' : 'Computadores de Telemetria e Investigação (2º Piso Lab)' },
       ];
       let matchedTitle: string | null = null;
       for (let i = 0; i < computerTerminals.length; i++) {
@@ -1373,8 +1467,8 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
         const targetVelX = desiredMove.x * effectiveTargetSpeed;
         const targetVelZ = desiredMove.z * effectiveTargetSpeed;
 
-        currentVel.x = MathUtils.damp(currentVel.x, targetVelX, 28.0, safeDelta);
-        currentVel.z = MathUtils.damp(currentVel.z, targetVelZ, 28.0, safeDelta);
+        currentVel.x = MathUtils.damp(currentVel.x, targetVelX, 36.0, safeDelta);
+        currentVel.z = MathUtils.damp(currentVel.z, targetVelZ, 36.0, safeDelta);
 
         const slopeGradient = -(desiredMove.x * normal.x + desiredMove.z * normal.z) / Math.max(0.15, normal.y);
         const slopeClimbSpeed = effectiveTargetSpeed * slopeGradient;
@@ -1554,7 +1648,7 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       let diff = targetAngle - bodyRef.current.rotation.y;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
-      bodyRef.current.rotation.y += diff * (1 - Math.exp(-14.0 * safeDelta));
+      bodyRef.current.rotation.y += diff * (1 - Math.exp(-18.0 * safeDelta));
 
       if (isDeepWater) {
         const targetSwimPitch = 1.32;
@@ -1578,8 +1672,8 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
           8.0,
           safeDelta
         );
-        const footGroundCorrection = (isGrounded && groundHit) ? -(groundHit.timeOfImpact - 0.93) : 0;
-        const clampedCorrection = Math.max(-0.05, Math.min(0.05, footGroundCorrection));
+        const footGroundCorrection = (isGrounded && groundHit) ? -(groundHit.timeOfImpact - 0.015) : 0;
+        const clampedCorrection = Math.max(-0.04, Math.min(0.02, footGroundCorrection));
         bodyRef.current.position.y = MathUtils.damp(bodyRef.current.position.y, clampedCorrection, 12.0, safeDelta);
         bodyRef.current.position.z = MathUtils.damp(bodyRef.current.position.z, 0.0, 12.0, safeDelta);
       }
@@ -1593,8 +1687,8 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
         bodyRef.current.rotation.x = MathUtils.damp(bodyRef.current.rotation.x, 0.08, 6.0, safeDelta);
       } else {
         bodyRef.current.rotation.x = MathUtils.damp(bodyRef.current.rotation.x, 0.0, 10.0, safeDelta);
-        const footGroundCorrection = (isGrounded && groundHit) ? -(groundHit.timeOfImpact - 0.93) : 0;
-        const clampedCorrection = Math.max(-0.05, Math.min(0.05, footGroundCorrection));
+        const footGroundCorrection = (isGrounded && groundHit) ? -(groundHit.timeOfImpact - 0.015) : 0;
+        const clampedCorrection = Math.max(-0.04, Math.min(0.02, footGroundCorrection));
         bodyRef.current.position.y = MathUtils.damp(bodyRef.current.position.y, clampedCorrection, 12.0, safeDelta);
         bodyRef.current.position.z = MathUtils.damp(bodyRef.current.position.z, 0.0, 12.0, safeDelta);
       }
@@ -1608,8 +1702,8 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       nextAction = isMoving ? 'swim' : 'treadWater';
     } else if (!isGrounded && (linvel.y > 0.8 || Math.abs(linvel.y) > 2.0)) {
       nextAction = 'jump';
-    } else if (isMoving || horizSpeed > 0.1) {
-      nextAction = isRunning && horizSpeed > 2.0 ? 'run' : 'walk';
+    } else if (isMoving || horizSpeed > 0.25) {
+      nextAction = isRunning ? 'run' : 'walk';
     } else {
       nextAction = 'idle';
     }
@@ -1641,25 +1735,29 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
       horizSpeed,
       isGrounded,
       isInWaterZone,
-      isRunning && horizSpeed > 2.0
+      isRunning && (isMoving || horizSpeed > 2.0)
     );
 
     if (isLaunching) return;
 
     if (prevCameraMode.current !== cameraMode) {
       if (cameraMode === 'third') {
-        const backVec = new Vector3(0, 0.25, 1).applyQuaternion(camera.quaternion).normalize();
+        _camBackScratch.set(0, 0.25, 1).applyQuaternion(camera.quaternion).normalize();
         camera.position.set(
-          playerPos.x + backVec.x * 4.2,
-          playerPos.y + 1.2 + backVec.y * 4.2,
-          playerPos.z + backVec.z * 4.2
+          playerPos.x + _camBackScratch.x * 4.2,
+          playerPos.y + 1.2 + _camBackScratch.y * 4.2,
+          playerPos.z + _camBackScratch.z * 4.2
         );
         if (prevCamPlayerPos.current) {
           prevCamPlayerPos.current.set(playerPos.x, playerPos.y + 0.25, playerPos.z);
         }
       } else {
         const eyeHeight = isFemale ? 0.62 : 0.66;
-        firstPersonEyePos.current = new Vector3(playerPos.x, playerPos.y + eyeHeight, playerPos.z);
+        if (!firstPersonEyePos.current) {
+          firstPersonEyePos.current = new Vector3(playerPos.x, playerPos.y + eyeHeight, playerPos.z);
+        } else {
+          firstPersonEyePos.current.set(playerPos.x, playerPos.y + eyeHeight, playerPos.z);
+        }
         camera.position.copy(firstPersonEyePos.current);
       }
       prevCameraMode.current = cameraMode;
@@ -1801,18 +1899,19 @@ export function Player({ onAction, actionRequested }: PlayerProps) {
             visorMode={visorMode}
             suitStyle={suitStyle}
             actionName={drivingCarId ? 'drive' : isDying ? 'dead' : actionName}
-            speed={drivingCarId ? 0 : inWater ? 2.8 : actionName === 'run' ? 17.0 : 8.8}
+            speed={drivingCarId ? 0 : inWater ? 2.8 : actionName === 'run' ? 9.6 : 4.0}
             isJumping={!drivingCarId && !isDying && actionName === 'jump'}
             hasSpacesuit={gameMode === 'story' ? hasSpacesuit : true}
             carryingFlag={gameMode === 'story' && planetIndex === 1 && storyStep === 'moon_exit_flag' && !isFlagPlantedOnMoon}
+            motionRole="player"
           />
           {!drivingCarId &&
             (inWater ? (
-              <WaterSplashFX active={true} speed={actionName === 'run' ? 4.5 : 1.5} />
+              <WaterSplashFX active={true} speed={actionName === 'run' ? 3.2 : 1.5} />
             ) : (
               <FootstepDust
                 active={actionName === 'walk' || actionName === 'run'}
-                speed={actionName === 'run' ? 5.8 : 2.0}
+                speed={actionName === 'run' ? 3.4 : 1.7}
               />
             ))}
         </group>

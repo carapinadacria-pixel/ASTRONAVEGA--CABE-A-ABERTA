@@ -584,7 +584,7 @@ export function updateCarAudio(
   }
 
   const absSpeed = Math.abs(speedMs);
-  const speedNorm = Math.min(1.0, absSpeed / 42.0);
+  const speedNorm = Math.min(1.0, absSpeed / 64.0);
   const absThrottle = Math.min(1.0, Math.abs(throttle));
 
   // Simulated 6-gear thermal combustion curve (deep cylinder pulse, no high-frequency synth whine)
@@ -759,8 +759,14 @@ export function updateSpatialAudio(
 
   // Footstep Cadence Triggering (works across Earth and all planetary surfaces)
   if (currentEnvScene === 'surface' && isMoving && isGrounded && speed > 0.4) {
-    const isRunning = isSprintingParam !== undefined ? isSprintingParam && speed > 2.0 : speed > 8.5;
-    const interval = inWater ? (isRunning ? 0.34 : 0.54) : isRunning ? 0.255 : 0.475;
+    const isRunning = isSprintingParam !== undefined ? isSprintingParam && speed > 2.0 : speed > 6.6;
+    const interval = inWater
+      ? isRunning
+        ? 0.38
+        : 0.54
+      : isRunning
+      ? Math.max(0.30, Math.min(0.38, 3.15 / Math.max(speed, 7.5)))
+      : Math.max(0.43, Math.min(0.54, 2.65 / Math.max(speed, 4.5)));
 
     if (performance.now() - lastFootstepTime > interval * 1000) {
       lastFootstepTime = performance.now();

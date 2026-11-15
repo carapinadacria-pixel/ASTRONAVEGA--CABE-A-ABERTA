@@ -389,7 +389,13 @@ export function PlanetaryBaseModule({
         fontWeight="bold"
         anchorX="center"
       >
-        {isDoorOpen ? 'PORTA METÁLICA ABERTA • ENTRE PARA RECARREGAR' : 'APROXIME-SE • PORTA AUTOMÁTICA'}
+        {language === 'en'
+          ? isDoorOpen
+            ? 'METAL DOOR OPEN • ENTER TO RECHARGE'
+            : 'APPROACH • AUTOMATIC DOOR'
+          : isDoorOpen
+          ? 'PORTA METÁLICA ABERTA • ENTRE PARA RECARREGAR'
+          : 'APROXIME-SE • PORTA AUTOMÁTICA'}
       </Text>
 
       {/* ============================================================== */}
@@ -606,7 +612,7 @@ export function PlanetaryBaseModule({
           <meshBasicMaterial color="#10b981" transparent opacity={0.65} />
         </mesh>
         <Text position={[0, 2.65, 0.2]} fontSize={0.22} color="#6ee7b7" fontWeight="bold" anchorX="center">
-          HIDRATAÇÃO & PROTEÇÃO
+          {language === 'en' ? 'HYDRATION & PROTECTION' : 'HIDRATAÇÃO & PROTEÇÃO'}
         </Text>
 
         {nearRefill && (
@@ -621,10 +627,20 @@ export function PlanetaryBaseModule({
             >
               <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
                 <RefreshCw className="w-4 h-4 text-emerald-400" />
-                <span>{refillFeedback ? 'Recarregado 100%!' : '[B] / Toque: Recarregar'}</span>
+                <span>
+                  {language === 'en'
+                    ? refillFeedback
+                      ? 'Recharged 100%!'
+                      : '[B] / Tap: Recharge'
+                    : refillFeedback
+                    ? 'Recarregado 100%!'
+                    : '[B] / Toque: Recarregar'}
+                </span>
               </div>
               <span className="text-[10px] font-mono text-cyan-200">
-                Restaura Água, O₂ & Proteção do Traje
+                {language === 'en'
+                  ? 'Restores Water, O₂ & Suit Protection'
+                  : 'Restaura Água, O₂ & Proteção do Traje'}
               </span>
             </button>
           </Html>

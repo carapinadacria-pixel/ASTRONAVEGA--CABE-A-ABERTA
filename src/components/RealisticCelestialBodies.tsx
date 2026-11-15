@@ -303,9 +303,9 @@ export function RealisticSun({ radius = 3680 }: { radius?: number }) {
       flareGroupRef.current.rotation.y += Math.min(delta, 0.05) * 0.015;
     }
     if (sunRootRef.current) {
-      // Permanent minimum apparent angular size so the Sun never shrinks to a faint speck even at outer exoplanets
+      // Permanent minimum apparent angular size so the Sun remains centrally prominent at every orbital distance
       const camDist = state.camera.position.length();
-      const apparentScale = Math.max(1.0, (camDist * 0.13) / radius);
+      const apparentScale = Math.max(1.0, (camDist * 0.125) / radius);
       sunRootRef.current.scale.setScalar(apparentScale);
     }
     if (labelRef.current) {
@@ -357,19 +357,32 @@ export function RealisticSun({ radius = 3680 }: { radius?: number }) {
         <sphereGeometry args={[radius * 1.95, 36, 36]} />
       </mesh>
 
-      {/* 360-Degree Distance-Invariant Corona Flare Sprite (Visible from any angle & farthest exoplanets) */}
+      {/* 360-Degree Distance-Invariant Corona Flare Sprites (Always bright & visible at center from any angle) */}
       {farGlowTex && (
-        <sprite scale={[radius * 4.6, radius * 4.6, 1]} frustumCulled={false}>
-          <spriteMaterial
-            map={farGlowTex}
-            color="#fde047"
-            transparent
-            opacity={0.85}
-            blending={AdditiveBlending}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </sprite>
+        <>
+          <sprite scale={[radius * 4.8, radius * 4.8, 1]} renderOrder={4} frustumCulled={false}>
+            <spriteMaterial
+              map={farGlowTex}
+              color="#fde047"
+              transparent
+              opacity={0.94}
+              blending={AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </sprite>
+          <sprite scale={[radius * 2.55, radius * 2.55, 1]} renderOrder={5} frustumCulled={false}>
+            <spriteMaterial
+              map={farGlowTex}
+              color="#fffbeb"
+              transparent
+              opacity={0.82}
+              blending={AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </sprite>
+        </>
       )}
 
       <group ref={labelRef} position={[0, radius * 1.18, 0]} frustumCulled={false}>

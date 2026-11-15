@@ -17,6 +17,8 @@ import { playDoorOpenSound, playDoorCloseSound } from '../audio';
 // - Two-Story Interior with Expanded 2nd Floor Upper Tech Deck (Y = 10.50m).
 // ---------------------------------------------------------------------------
 export function LaboratoryFacility() {
+  const language = useGameStore((s) => s.language);
+  const isEn = language === 'en';
   const centrifugeRef = useRef<Group>(null);
   const specimenHoloRef = useRef<Group>(null);
   const orbitalGlobeRef = useRef<Group>(null);
@@ -212,10 +214,10 @@ export function LaboratoryFacility() {
           </mesh>
         </RigidBody>
         <Text position={[0, 0.65, 0.62]} fontSize={0.78} color="#38bdf8" fontWeight="bold" anchorX="center">
-          LABORATÓRIO DE PESQUISA & PROPULSÃO • GGPEN
+          {isEn ? 'RESEARCH & PROPULSION LABORATORY • GGPEN' : 'LABORATÓRIO DE PESQUISA & PROPULSÃO • GGPEN'}
         </Text>
         <Text position={[0, -0.15, 0.62]} fontSize={0.48} color="#f8fafc" fontWeight="bold" anchorX="center">
-          PORTA PRINCIPAL OESTE • CENTRO CIENTÍFICO AEROESPACIAL
+          {isEn ? 'WEST MAIN ENTRANCE • AEROSPACE SCIENCE CENTER' : 'PORTA PRINCIPAL OESTE • CENTRO CIENTÍFICO AEROESPACIAL'}
         </Text>
         <Text position={[0, -0.78, 0.62]} fontSize={0.34} color="#94a3b8" anchorX="center">
           NASA SPACE APPS LUANDA COLLABORATIVE RESEARCH COMPLEX
@@ -368,7 +370,7 @@ export function LaboratoryFacility() {
           <meshStandardMaterial color="#0f172a" metalness={0.85} />
         </mesh>
         <Text position={[0, 4.8, 1.22]} fontSize={0.40} color="#38bdf8" fontWeight="bold" anchorX="center">
-          PORTA PRINCIPAL OESTE • LABORATÓRIO CIENTÍFICO GGPEN
+          {isEn ? 'WEST MAIN ENTRANCE • GGPEN SCIENCE LAB' : 'PORTA PRINCIPAL OESTE • LABORATÓRIO CIENTÍFICO GGPEN'}
         </Text>
 
         {/* Projecting Architectural Canopy over West Main Entrance Plaza */}
@@ -403,7 +405,7 @@ export function LaboratoryFacility() {
           fontWeight="bold"
           anchorX="center"
         >
-          ENTRADA PRINCIPAL OESTE • LABORATÓRIO GGPEN
+          {isEn ? 'WEST MAIN ENTRANCE • GGPEN LABORATORY' : 'ENTRADA PRINCIPAL OESTE • LABORATÓRIO GGPEN'}
         </Text>
       </group>
 
@@ -519,10 +521,10 @@ export function LaboratoryFacility() {
           </mesh>
         </RigidBody>
         <Text position={[0, 0.35, 0.62]} fontSize={0.95} color="#38bdf8" fontWeight="bold" anchorX="center">
-          LABORATÓRIO DE PESQUISA & PROPULSÃO ESPACIAL • GGPEN
+          {isEn ? 'SPACE RESEARCH & PROPULSION LABORATORY • GGPEN' : 'LABORATÓRIO DE PESQUISA & PROPULSÃO ESPACIAL • GGPEN'}
         </Text>
         <Text position={[0, -0.55, 0.62]} fontSize={0.55} color="#f8fafc" fontWeight="bold" anchorX="center">
-          ALA PANORÂMICA NORTE • ASTROBIOLOGIA & TELEMETRIA ORBITAL
+          {isEn ? 'NORTH PANORAMIC WING • ASTROBIOLOGY & ORBITAL TELEMETRY' : 'ALA PANORÂMICA NORTE • ASTROBIOLOGIA & TELEMETRIA ORBITAL'}
         </Text>
         <GGPENLogoDecal position={[-24.5, 0, 0.62]} scale={[2.4, 2.4, 1]} />
         <NasaSpaceAppsLuandaDecal position={[24.5, 0, 0.62]} scale={[2.3, 2.3, 1]} />
@@ -694,7 +696,7 @@ export function LaboratoryFacility() {
           <meshStandardMaterial color="#0f172a" metalness={0.85} />
         </mesh>
         <Text position={[0, 4.6, 0.77]} fontSize={0.34} color="#38bdf8" fontWeight="bold" anchorX="center">
-          PORTA LATERAL NORTE • LABORATÓRIO GGPEN
+          {isEn ? 'NORTH SIDE ENTRANCE • GGPEN LABORATORY' : 'PORTA LATERAL NORTE • LABORATÓRIO GGPEN'}
         </Text>
       </group>
 
@@ -729,7 +731,7 @@ export function LaboratoryFacility() {
         ))}
         <pointLight position={[0, 5, 0]} color="#c084fc" intensity={2.2} distance={12} />
         <Text position={[0, 8.3, 0]} fontSize={0.38} color="#c084fc" fontWeight="bold" anchorX="center">
-          DIVISÃO DE ASTROBIOLOGIA & CULTIVOS ESPACIAIS
+          {isEn ? 'ASTROBIOLOGY & SPACE CROPS DIVISION' : 'DIVISÃO DE ASTROBIOLOGIA & CULTIVOS ESPACIAIS'}
         </Text>
       </group>
 
@@ -756,7 +758,7 @@ export function LaboratoryFacility() {
           </mesh>
         </group>
         <Text position={[0, 6.8, 0]} fontSize={0.36} color="#38bdf8" fontWeight="bold" anchorX="center">
-          ANÁLISE MINERAL & ESPECTRAL DE REGOLITO
+          {isEn ? 'MINERAL & SPECTRAL REGOLITH ANALYSIS' : 'ANÁLISE MINERAL & ESPECTRAL DE REGOLITO'}
         </Text>
       </group>
 
@@ -786,10 +788,10 @@ export function LaboratoryFacility() {
           </group>
         ))}
         <Text position={[0, 8.6, 0]} fontSize={0.38} color="#10b981" fontWeight="bold" anchorX="center">
-          SUPERCOMPUTADOR DE DINÂMICA ORBITAL GGPEN
+          {isEn ? 'GGPEN ORBITAL DYNAMICS SUPERCOMPUTER' : 'SUPERCOMPUTADOR DE DINÂMICA ORBITAL GGPEN'}
         </Text>
         <Text position={[0, 8.05, 0.85]} fontSize={0.24} color="#38bdf8" fontWeight="bold" anchorX="center">
-          [CLIQUE OU TECLA C] ABRIR BIBLIOTECA DE LIVROS CIENTÍFICOS
+          {isEn ? '[CLICK OR KEY C] OPEN SCIENTIFIC BOOK LIBRARY' : '[CLIQUE OU TECLA C] ABRIR BIBLIOTECA DE LIVROS CIENTÍFICOS'}
         </Text>
       </group>
 
@@ -814,7 +816,7 @@ export function LaboratoryFacility() {
           ))}
         </group>
         <Text position={[0, 5.2, 0]} fontSize={0.35} color="#eab308" fontWeight="bold" anchorX="center">
-          CENTRÍFUGA CRIOGÉNICA DE PROPELENTES
+          {isEn ? 'CRYOGENIC PROPELLANT CENTRIFUGE' : 'CENTRÍFUGA CRIOGÉNICA DE PROPELENTES'}
         </Text>
       </group>
 
@@ -885,10 +887,10 @@ export function LaboratoryFacility() {
             </group>
           ))}
           <Text position={[0, 6.1, 0]} fontSize={0.38} color="#38bdf8" fontWeight="bold" anchorX="center">
-            CENTRO DE CONTROLO ORBITAL & TELEMETRIA ANGOSAT-2
+            {isEn ? 'ANGOSAT-2 ORBITAL CONTROL & TELEMETRY CENTER' : 'CENTRO DE CONTROLO ORBITAL & TELEMETRIA ANGOSAT-2'}
           </Text>
           <Text position={[0, 5.55, 0]} fontSize={0.22} color="#10b981" fontWeight="bold" anchorX="center">
-            [CLIQUE OU TECLA C] LER LIVROS CIENTÍFICOS
+            {isEn ? '[CLICK OR KEY C] READ SCIENTIFIC BOOKS' : '[CLIQUE OU TECLA C] LER LIVROS CIENTÍFICOS'}
           </Text>
         </group>
 
@@ -917,7 +919,7 @@ export function LaboratoryFacility() {
           </group>
           <pointLight position={[0, 3.8, 0]} color="#a855f7" intensity={3.0} distance={14} />
           <Text position={[0, 6.2, 0]} fontSize={0.38} color="#c084fc" fontWeight="bold" anchorX="center">
-            REATOR DE CONFINAMENTO MAGNÉTICO & PROPULSÃO IÓNICA
+            {isEn ? 'MAGNETIC CONFINEMENT REACTOR & ION PROPULSION' : 'REATOR DE CONFINAMENTO MAGNÉTICO & PROPULSÃO IÓNICA'}
           </Text>
         </group>
 
@@ -938,7 +940,7 @@ export function LaboratoryFacility() {
             </group>
           ))}
           <Text position={[0, 5.1, 0]} fontSize={0.38} color="#10b981" fontWeight="bold" anchorX="center">
-            LABORATÓRIO DE BIOASSINATURAS EXOPLANETÁRIAS & CRIO-GENÓMICA
+            {isEn ? 'EXOPLANET BIOSIGNATURE & CRYO-GENOMICS LAB' : 'LABORATÓRIO DE BIOASSINATURAS EXOPLANETÁRIAS & CRIO-GENÓMICA'}
           </Text>
         </group>
 
@@ -963,7 +965,7 @@ export function LaboratoryFacility() {
             </mesh>
           ))}
           <Text position={[0, 5.4, 0]} rotation={[0, -Math.PI / 2, 0]} fontSize={0.36} color="#f97316" fontWeight="bold" anchorX="center">
-            TÚNEL AEROTERMODINÂMICO HIPERSÓNICO & ESCUDOS TÉRMICOS
+            {isEn ? 'HYPERSONIC AEROTHERMODYNAMICS & HEAT-SHIELD TUNNEL' : 'TÚNEL AEROTERMODINÂMICO HIPERSÓNICO & ESCUDOS TÉRMICOS'}
           </Text>
         </group>
       </group>

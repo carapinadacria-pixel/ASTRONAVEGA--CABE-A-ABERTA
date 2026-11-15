@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense, memo, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { KeyboardControls } from '@react-three/drei';
 import { Physics, RigidBody } from '@react-three/rapier';
 import { Player } from './Player';
@@ -54,9 +54,11 @@ import {
   Music,
   VolumeX,
   Volume2,
+  HelpCircle,
 } from 'lucide-react';
 import { InventoryModal } from './InventoryModal';
 import { ComputerBookLibraryModal } from './ComputerBookLibraryModal';
+import { ControlsTutorialModal } from './ControlsTutorialModal';
 
 const keyboardMap = [
   { name: 'forward', keys: ['ArrowUp', 'KeyW'] },
@@ -67,20 +69,31 @@ const keyboardMap = [
   { name: 'sprint', keys: ['ShiftLeft', 'ShiftRight'] },
 ];
 
-// Dedicated power-saving 20 FPS / 30 FPS / 40 FPS governor (Mounts when 20, 30, or 40 FPS is chosen; 60 runs on native hardware vsync)
-function ThrottledRenderer({ targetFps }: { targetFps: 20 | 30 | 40 }) {
-  const accumulatedTime = useRef(0);
-  const targetInterval = 1 / targetFps; // 0.05s for 20 FPS, 0.0333s for 30 FPS, 0.025s for 40 FPS
+// Monotonic on-demand frame pacer for 20 / 30 / 40 FPS (eliminates wasted background CPU simulation & phase jitter)
+function DemandFramePacer({ targetFps }: { targetFps: 20 | 30 | 40 }) {
+  const invalidate = useThree((state) => state.invalidate);
 
-  useFrame(({ gl, scene, camera }, delta) => {
-    // Clamp delta to prevent huge jumps or lag accumulation
-    const safeDelta = Math.min(0.08, delta);
-    accumulatedTime.current += safeDelta;
-    if (accumulatedTime.current >= targetInterval - 0.002) {
-      gl.render(scene, camera);
-      accumulatedTime.current = accumulatedTime.current % targetInterval;
-    }
-  }, 1);
+  useEffect(() => {
+    let rafId = 0;
+    const intervalMs = 1000 / targetFps;
+    let nextDeadline = performance.now();
+
+    invalidate();
+
+    const tick = (now: number) => {
+      if (now >= nextDeadline - 1.5) {
+        nextDeadline += intervalMs;
+        if (now - nextDeadline > intervalMs) {
+          nextDeadline = now;
+        }
+        invalidate();
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [targetFps, invalidate]);
 
   return null;
 }
@@ -134,7 +147,7 @@ const WebGLFallbackScreen = memo(function WebGLFallbackScreen({
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-950/40 via-slate-950 to-black pointer-events-none" />
 
       {/* Main card */}
-      <div className="relative z-10 w-full max-w-lg bg-slate-900/95 backdrop-blur-2xl border border-blue-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col gap-5 text-center">
+      <div className="relative z-10 w-full max-w-lg bg-slate-900/95 border border-blue-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col gap-5 text-center">
         {/* Top Badges / Logos */}
         <div className="flex items-center justify-center gap-3 border-b border-white/10 pb-4">
           <div className="flex items-center gap-2">
@@ -475,7 +488,8 @@ function createDummyRenderer(canvas: HTMLCanvasElement): any {
       <KeyboardControls map={keyboardMap}>
         <Canvas
           shadows={false}
-          dpr={[1, isMobileOrLowRAM ? 1.0 : 1.25]}
+          frameloop={targetFps === 60 ? 'always' : 'demand'}
+          dpr={[1, targetFps <= 20 || isMobileOrLowRAM ? 1.0 : 1.25]}
           gl={createSafeRenderer}
           onCreated={({ gl }) => {
             gl.toneMappingExposure = 0.85;
@@ -490,11 +504,11 @@ function createDummyRenderer(canvas: HTMLCanvasElement): any {
               });
             }
           }}
-          camera={{ fov: 65, near: 0.2, far: scene === 'surface' ? 3500 : 360000 }}
+          camera={{ fov: 65, near: scene === 'surface' ? 0.2 : 1.8, far: scene === 'surface' ? 3500 : 380000 }}
         >
           <color attach="background" args={[bgSkyColor]} />
           <Suspense fallback={null}>
-            {(targetFps === 20 || targetFps === 30 || targetFps === 40) && <ThrottledRenderer targetFps={targetFps} />}
+            {(targetFps === 20 || targetFps === 30 || targetFps === 40) && <DemandFramePacer targetFps={targetFps} />}
             {scene === 'surface' ? (
               <Physics gravity={[0, -gravity, 0]} timeStep={1 / 60} interpolate={true}>
                 <PlanetEnvironment />
@@ -551,7 +565,7 @@ const HUDHeader = memo(function HUDHeader() {
       </div>
 
       {currentPlanet.type === 'exoplanet' && (
-        <div className="flex flex-col gap-2 w-64 sm:w-72 bg-blue-900/40 p-3 rounded-xl backdrop-blur-md border border-blue-400/30 pointer-events-auto mt-1">
+        <div className="flex flex-col gap-2 w-64 sm:w-72 bg-blue-900/40 p-3 rounded-xl border border-blue-400/30 pointer-events-auto mt-1">
           <h3 className="text-xs font-bold uppercase tracking-wider text-blue-300 border-b border-blue-400/30 pb-1 mb-1">
             NASA Exoplanet Archive
           </h3>
@@ -604,14 +618,14 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
     <div className="absolute top-4 inset-x-0 mx-auto max-w-xl px-3 sm:px-4 pointer-events-none z-30 flex flex-col items-center gap-2 select-none animate-in fade-in duration-300">
       {/* Solar Evaporation & Thermal Proximity Banner */}
       {isEvaporating ? (
-        <div className="w-full bg-red-950/95 backdrop-blur-2xl border-2 border-orange-400 rounded-2xl px-4 py-3 shadow-[0_0_32px_rgba(249,115,22,0.7)] flex items-center justify-center gap-2 text-orange-100 animate-pulse">
+        <div className="w-full bg-red-950/95 border-2 border-orange-400 rounded-2xl px-4 py-3 shadow-[0_0_32px_rgba(249,115,22,0.7)] flex items-center justify-center gap-2 text-orange-100 animate-pulse">
           <AlertTriangle className="w-5 h-5 text-orange-300 shrink-0" />
           <span className="text-xs sm:text-sm font-black uppercase tracking-wide text-center">
             {t.evaporatedMsg}
           </span>
         </div>
       ) : solarHeatPct > 0 ? (
-        <div className="w-full bg-orange-950/95 backdrop-blur-2xl border border-amber-400/90 rounded-2xl px-3.5 py-2 shadow-[0_0_24px_rgba(245,158,11,0.5)] flex items-center justify-between gap-3 text-amber-100 animate-pulse">
+        <div className="w-full bg-orange-950/95 border border-amber-400/90 rounded-2xl px-3.5 py-2 shadow-[0_0_24px_rgba(245,158,11,0.5)] flex items-center justify-between gap-3 text-amber-100 animate-pulse">
           <div className="flex items-center gap-2">
             <Sun className="w-4 h-4 text-amber-300 shrink-0" />
             <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wide">
@@ -629,7 +643,7 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
 
       {/* Educational Staging Banner (Desencapsulamento de 8s) */}
       {isStaging ? (
-        <div className="w-full bg-slate-900/95 backdrop-blur-2xl border-2 border-amber-400/80 rounded-3xl p-3.5 sm:p-4 shadow-2xl flex flex-col gap-2.5 pointer-events-auto">
+        <div className="w-full bg-slate-900/95 border-2 border-amber-400/80 rounded-3xl p-3.5 sm:p-4 shadow-2xl flex flex-col gap-2.5 pointer-events-auto">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-white/10 pb-2">
             <div className="flex items-center gap-2">
@@ -700,7 +714,7 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
         </div>
       ) : (
         /* Active Flight Telemetry HUD */
-        <div className="bg-slate-900/90 backdrop-blur-xl border border-blue-500/40 rounded-2xl px-4 py-2 sm:py-2.5 shadow-2xl flex items-center gap-3 sm:gap-6 text-white pointer-events-auto">
+        <div className="bg-slate-900/90 border border-blue-500/40 rounded-2xl px-4 py-2 sm:py-2.5 shadow-2xl flex items-center gap-3 sm:gap-6 text-white pointer-events-auto">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <div className="flex flex-col">
@@ -726,7 +740,7 @@ const SpaceFlightHUD = memo(function SpaceFlightHUD() {
       )}
 
       {/* Flight Control Reminder */}
-      <div className="bg-black/65 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[9px] sm:text-[10px] font-mono text-slate-300 flex items-center gap-1.5 shadow-md">
+      <div className="bg-black/65 px-3 py-1 rounded-full border border-white/10 text-[9px] sm:text-[10px] font-mono text-slate-300 flex items-center gap-1.5 shadow-md">
         <span>{isStoryAuto ? '🛰️' : '🎮'}</span>
         <span>{isStoryAuto ? t.storyAutopilotNote : t.manualFlightNote}</span>
       </div>
@@ -751,7 +765,7 @@ const EarthLaunchHUD = memo(function EarthLaunchHUD() {
   return (
     <div className="w-full sm:fixed sm:top-24 sm:left-6 sm:right-auto sm:w-72 pointer-events-none z-30 flex flex-col gap-1.5 select-none animate-in fade-in duration-200">
       <div
-        className={`w-full bg-slate-950/92 backdrop-blur-2xl rounded-2xl p-2 sm:p-3.5 flex flex-col gap-1.5 sm:gap-2 text-white border ${
+        className={`w-full bg-slate-950/92 rounded-2xl p-2 sm:p-3.5 flex flex-col gap-1.5 sm:gap-2 text-white border ${
           isFlameout || isCrashed
             ? 'border-red-500 shadow-[0_0_26px_rgba(239,68,68,0.45)]'
             : 'border-amber-400/80 shadow-[0_0_24px_rgba(245,158,11,0.28)]'
@@ -888,7 +902,7 @@ const MissionControlCenterView = memo(function MissionControlCenterView() {
 
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-3 sm:p-6 bg-[#040814]/90 text-white select-none pointer-events-auto overflow-y-auto">
-      <div className="relative z-10 w-full max-w-lg bg-slate-900/95 backdrop-blur-2xl border border-blue-500/40 rounded-3xl p-5 sm:p-7 shadow-2xl flex flex-col gap-4 text-center my-auto">
+      <div className="relative z-10 w-full max-w-lg bg-slate-900/95 border border-blue-500/40 rounded-3xl p-5 sm:p-7 shadow-2xl flex flex-col gap-4 text-center my-auto">
         {/* Top Badges */}
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div className="flex items-center gap-2">
@@ -1013,7 +1027,7 @@ const DiscreetResourcesCard = memo(function DiscreetResourcesCard() {
   if (scene !== 'surface') return null;
 
   return (
-    <div className="bg-slate-900/85 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-white/10 flex items-center gap-3 text-xs shadow-xl pointer-events-auto select-none">
+    <div className="bg-slate-900/85 px-3.5 py-2 rounded-2xl border border-white/10 flex items-center gap-3 text-xs shadow-xl pointer-events-auto select-none">
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] font-bold text-slate-400 uppercase">Fe</span>
         <span className="font-mono font-bold text-slate-100">{resources.iron}</span>
@@ -1052,10 +1066,10 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
     <div className="hidden lg:flex gap-3 justify-end pointer-events-auto">
       <button
         onClick={() => setVisorMode(visorMode === 'transparent' ? 'gold' : 'transparent')}
-        className={`w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all backdrop-blur-md border group cursor-pointer ${
+        className={`w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all border group cursor-pointer ${
           visorMode === 'gold'
-            ? 'bg-amber-500/25 hover:bg-amber-500/40 border-amber-400/60 text-amber-300 shadow-lg shadow-amber-500/25'
-            : 'bg-white/10 hover:bg-white/20 border-white/20 text-blue-300'
+            ? 'bg-amber-600/85 hover:bg-amber-500/90 border-amber-400/70 text-amber-100 shadow-lg shadow-amber-500/25'
+            : 'bg-slate-900/85 hover:bg-slate-800/95 border-white/20 text-blue-300'
         }`}
         title={`${t.visorLabel}: ${visorMode === 'gold' ? t.goldVisor : t.transparent} [V]`}
       >
@@ -1068,7 +1082,7 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
 
       <button
         onClick={toggleCameraMode}
-        className="bg-white/10 hover:bg-white/20 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all backdrop-blur-md border border-white/20 group cursor-pointer"
+        className="bg-slate-900/85 hover:bg-slate-800/95 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all border border-white/20 group cursor-pointer"
         title={t.toggleCameraTitle}
       >
         <Camera className="w-6 h-6 group-hover:text-blue-400 transition-colors" />
@@ -1076,7 +1090,7 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
 
       <button
         onClick={() => onAction('collect')}
-        className="bg-white/10 hover:bg-white/20 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all backdrop-blur-md border border-white/20 group cursor-pointer"
+        className="bg-slate-900/85 hover:bg-slate-800/95 text-white w-14 h-14 rounded-2xl flex items-center justify-center active:scale-95 transition-all border border-white/20 group cursor-pointer"
         title={t.collectResourcesTitle}
       >
         <Zap className="w-6 h-6 group-hover:text-yellow-400 transition-colors" />
@@ -1085,10 +1099,10 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
       {planetIndex !== 0 && (
         <button
           onClick={() => toggleOxygenChamber()}
-          className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all backdrop-blur-md border group cursor-pointer ${
+          className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center active:scale-95 transition-all border group cursor-pointer ${
             isOxygenChamberOpen
-              ? 'bg-cyan-500/25 hover:bg-cyan-500/40 text-cyan-200 border-cyan-400/70 shadow-lg shadow-cyan-500/25'
-              : 'bg-red-950/90 hover:bg-red-900/90 text-red-200 border-red-400 shadow-lg shadow-red-500/45 animate-pulse'
+              ? 'bg-cyan-700/85 hover:bg-cyan-600/90 text-cyan-100 border-cyan-400/70 shadow-lg shadow-cyan-500/25'
+              : 'bg-red-950/95 hover:bg-red-900/95 text-red-200 border-red-400 shadow-lg shadow-red-500/45 animate-pulse'
           }`}
           title={`${t.o2ChamberLabel} (${isOxygenChamberOpen ? t.closeShort : t.openShort}) [E]`}
         >
@@ -1102,10 +1116,10 @@ const DesktopActionButtons = memo(function DesktopActionButtons({
       {/* Run / Sprint Button replacing the Hammer icon */}
       <button
         onClick={() => setMobileSprint(!mobileSprint)}
-        className={`px-4 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all backdrop-blur-md border group cursor-pointer ${
+        className={`px-4 h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all border group cursor-pointer ${
           mobileSprint
-            ? 'bg-emerald-500/35 hover:bg-emerald-500/50 border-emerald-400 text-emerald-200 shadow-lg shadow-emerald-500/25'
-            : 'bg-white/10 hover:bg-white/20 border-white/20 text-white'
+            ? 'bg-emerald-600/85 hover:bg-emerald-500/90 border-emerald-400 text-emerald-100 shadow-lg shadow-emerald-500/25'
+            : 'bg-slate-900/85 hover:bg-slate-800/95 border-white/20 text-white'
         }`}
         title={mobileSprint ? t.runningModeActive : t.clickToRun}
       >
@@ -1139,7 +1153,7 @@ const CharacterCustomizationModal = memo(function CharacterCustomizationModal({
   const t = UI_TEXT[language];
 
   return (
-    <div className="bg-slate-900/95 p-5 rounded-3xl backdrop-blur-2xl border border-blue-500/40 text-white w-full max-w-sm flex flex-col gap-4 shadow-2xl max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95">
+    <div className="bg-slate-900/95 p-5 rounded-3xl border border-blue-500/40 text-white w-full max-w-sm flex flex-col gap-4 shadow-2xl max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 pb-3">
         <div className="flex items-center gap-2.5">
@@ -1346,7 +1360,7 @@ const AstronautLifeSupportHUD = memo(function AstronautLifeSupportHUD() {
   return (
     <div className="w-full pointer-events-none select-none">
       <div
-        className={`bg-slate-950/85 backdrop-blur-xl rounded-2xl p-2 sm:p-2.5 shadow-xl flex flex-col gap-1.5 text-white border transition-colors ${
+        className={`bg-slate-950/85 rounded-2xl p-2 sm:p-2.5 shadow-xl flex flex-col gap-1.5 text-white border transition-colors ${
           isDying || isChamberClosed || activeHazard || oxygen <= 0
             ? 'border-red-500/80 shadow-red-500/30'
             : 'border-white/15'
@@ -1434,7 +1448,7 @@ const HazardExposureAlert = memo(function HazardExposureAlert() {
   return (
     <div className="fixed top-[68px] sm:top-24 left-1/2 -translate-x-1/2 z-30 pointer-events-none select-none animate-in fade-in duration-150 px-3 max-w-[92vw]">
       <div
-        className={`flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-2xl backdrop-blur-xl border shadow-2xl ${
+        className={`flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-2xl border shadow-2xl ${
           isRadiation
             ? 'bg-lime-950/90 border-lime-400/70 text-lime-200'
             : 'bg-amber-950/90 border-amber-400/70 text-amber-200'
@@ -1496,7 +1510,7 @@ const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
   return (
     <div className="fixed top-[128px] sm:top-[152px] left-1/2 -translate-x-1/2 z-40 pointer-events-none select-none flex flex-col items-center gap-1.5 px-3 max-w-[92vw]">
       {isDying && (
-        <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-red-950/95 border-2 border-red-400 text-red-50 shadow-[0_0_32px_rgba(239,68,68,0.75)] backdrop-blur-xl animate-pulse">
+        <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-red-950/95 border-2 border-red-400 text-red-50 shadow-[0_0_32px_rgba(239,68,68,0.75)] animate-pulse">
           <AlertTriangle className="w-5 h-5 text-red-300 shrink-0" />
           <div className="flex flex-col">
             <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
@@ -1512,7 +1526,7 @@ const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
       )}
 
       {launchFailureMsg && (
-        <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-red-950/95 border border-red-400/90 text-red-100 shadow-2xl backdrop-blur-xl animate-in fade-in duration-200">
+        <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-red-950/95 border border-red-400/90 text-red-100 shadow-2xl animate-in fade-in duration-200">
           <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
           <span className="text-[10px] sm:text-xs font-bold">{launchFailureMsg}</span>
         </div>
@@ -1520,7 +1534,7 @@ const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
 
       {showRespawnToast && (
         <div
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl shadow-2xl backdrop-blur-xl animate-in fade-in duration-200 border ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl shadow-2xl animate-in fade-in duration-200 border ${
             isDangerToast
               ? 'bg-red-950/95 border-red-400/85 text-red-100'
               : 'bg-slate-950/95 border-cyan-400/80 text-cyan-100'
@@ -1541,7 +1555,7 @@ const LifeSupportCriticalAlert = memo(function LifeSupportCriticalAlert() {
 
       {showDehydration && (
         <div
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl border shadow-2xl backdrop-blur-xl animate-in fade-in duration-150 ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl border shadow-2xl animate-in fade-in duration-150 ${
             drainingSuit
               ? 'bg-red-950/95 border-red-400 text-red-100'
               : 'bg-amber-950/95 border-amber-400 text-amber-100'
@@ -1582,7 +1596,7 @@ const SettingsModal = memo(function SettingsModal({ onClose }: SettingsModalProp
   const t = UI_TEXT[language];
 
   return (
-    <div className="bg-slate-900/95 p-5 rounded-3xl backdrop-blur-2xl border border-cyan-500/40 text-white w-full max-w-sm flex flex-col gap-4 shadow-2xl max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95">
+    <div className="bg-slate-900/95 p-5 rounded-3xl border border-cyan-500/40 text-white w-full max-w-sm flex flex-col gap-4 shadow-2xl max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 pb-3">
         <div className="flex items-center gap-2.5">
@@ -1840,7 +1854,7 @@ const DesktopControlsGuide = memo(function DesktopControlsGuide() {
   const t = UI_TEXT[language];
 
   return (
-    <div className="absolute bottom-6 left-24 hidden lg:flex flex-col gap-1 pointer-events-none text-white/60 font-mono text-xs uppercase tracking-widest bg-black/45 p-3.5 rounded-2xl backdrop-blur-md border border-white/10 shadow-lg">
+    <div className="absolute bottom-6 left-24 hidden lg:flex flex-col gap-1 pointer-events-none text-white/75 font-mono text-xs uppercase tracking-widest bg-slate-950/88 p-3.5 rounded-2xl border border-white/10 shadow-lg">
       {scene === 'surface' ? (
         drivingCarId ? (
           <>
@@ -1946,22 +1960,22 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
   const showRocketPrompt = isNearRocket && !isLaunching && !drivingCarId;
   if (!activeCar && !showRocketPrompt) return null;
 
-  const maxKmh = activeCar?.type === 'supercar' ? 212 : 165;
+  const maxKmh = activeCar?.type === 'supercar' ? 230 : 200;
   const speedPct = Math.min(100, Math.round((carSpeedKmh / maxKmh) * 100));
   const gearLabel =
     carSpeedKmh === 0
       ? 'N'
       : activeCar && activeCar.speed < -0.15
       ? 'R'
-      : carSpeedKmh < 24
+      : carSpeedKmh < 28
       ? '1'
-      : carSpeedKmh < 52
+      : carSpeedKmh < 65
       ? '2'
-      : carSpeedKmh < 82
+      : carSpeedKmh < 105
       ? '3'
-      : carSpeedKmh < 115
-      ? '4'
       : carSpeedKmh < 148
+      ? '4'
+      : carSpeedKmh < 188
       ? '5'
       : '6';
 
@@ -2000,7 +2014,7 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
     <div className="w-full pointer-events-auto flex flex-col items-stretch gap-1.5 animate-in fade-in duration-200">
       {drivingCarId && activeCar ? (
         /* Compact Top-Right Speedometer & Cockpit HUD placed directly below Life Support */
-        <div className="w-full flex flex-col gap-1.5 bg-slate-950/92 backdrop-blur-xl border border-cyan-400/75 p-2 sm:p-2.5 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.3)] text-white">
+        <div className="w-full flex flex-col gap-1.5 bg-slate-950/92 border border-cyan-400/75 p-2 sm:p-2.5 rounded-2xl shadow-[0_0_20px_rgba(6,182,212,0.3)] text-white">
           <div className="flex items-center justify-between gap-2">
             <div className="flex flex-col flex-1 min-w-0">
               <div className="flex items-baseline gap-1">
@@ -2050,7 +2064,7 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
       ) : activeCar ? (
         <button
           onClick={() => toggleDriveCar()}
-          className="w-full flex items-center justify-between gap-2 bg-slate-950/92 hover:bg-slate-900 backdrop-blur-xl border border-emerald-400/80 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-2xl shadow-[0_0_16px_rgba(16,185,129,0.3)] text-white transition-all active:scale-95 cursor-pointer group"
+          className="w-full flex items-center justify-between gap-2 bg-slate-950/92 hover:bg-slate-900 border border-emerald-400/80 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-2xl shadow-[0_0_16px_rgba(16,185,129,0.3)] text-white transition-all active:scale-95 cursor-pointer group"
         >
           <div className="flex flex-col text-left min-w-0">
             <span className="text-[8px] font-mono uppercase tracking-wider text-emerald-400 font-bold leading-tight truncate">
@@ -2069,7 +2083,7 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
       {showRocketPrompt && (
         <div className="w-full flex flex-col gap-1.5">
           {planetIndex === 0 && (
-            <div className="w-full bg-slate-950/94 backdrop-blur-xl border border-amber-400/75 p-2 sm:p-2.5 rounded-2xl shadow-[0_0_20px_rgba(245,158,11,0.28)] text-white flex flex-col gap-1.5">
+            <div className="w-full bg-slate-950/94 border border-amber-400/75 p-2 sm:p-2.5 rounded-2xl shadow-[0_0_20px_rgba(245,158,11,0.28)] text-white flex flex-col gap-1.5">
               <div className="flex items-center justify-between border-b border-white/10 pb-1">
                 <span className="flex items-center gap-1 text-[8px] sm:text-[9px] font-mono font-bold uppercase text-amber-300">
                   <Fuel className="w-3 h-3 text-amber-400" />
@@ -2150,7 +2164,7 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
 
           <button
             onClick={handleBoardRocket}
-            className={`w-full flex items-center justify-between gap-2 bg-slate-950/92 hover:bg-slate-900 backdrop-blur-xl px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-2xl text-white transition-all active:scale-95 cursor-pointer group border ${
+            className={`w-full flex items-center justify-between gap-2 bg-slate-950/92 hover:bg-slate-900 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-2xl text-white transition-all active:scale-95 cursor-pointer group border ${
               planetIndex === 0 && rocketFuelPct <= 0
                 ? 'border-red-400/80 shadow-[0_0_14px_rgba(239,68,68,0.28)]'
                 : 'border-amber-400/85 shadow-[0_0_18px_rgba(245,158,11,0.35)]'
@@ -2161,7 +2175,7 @@ const VehicleDriveHUD = memo(function VehicleDriveHUD() {
                 {planetIndex === 0 ? t.rocketPadName : t.capsuleName}
               </span>
               <span className="text-[10px] sm:text-xs font-extrabold tracking-wide text-white group-hover:text-amber-200 leading-tight">
-                {t.boardRocket}
+                {planetIndex === 0 ? t.boardRocket : t.boardCapsule}
               </span>
             </div>
             <span className="px-1.5 py-0.5 rounded-md bg-amber-400 text-slate-950 font-mono text-[10px] font-black shadow-sm shrink-0">
@@ -2188,7 +2202,7 @@ const TopRightComputerLibraryButton = memo(function TopRightComputerLibraryButto
   return (
     <button
       onClick={() => setComputerLibraryOpen(true)}
-      className="w-full pointer-events-auto flex items-center justify-between gap-2 bg-slate-950/92 hover:bg-slate-900 backdrop-blur-xl border border-cyan-400/85 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-2xl shadow-[0_0_18px_rgba(6,182,212,0.38)] text-white transition-all active:scale-95 cursor-pointer group animate-in fade-in duration-200"
+      className="w-full pointer-events-auto flex items-center justify-between gap-2 bg-slate-950/92 hover:bg-slate-900 border border-cyan-400/85 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-2xl shadow-[0_0_18px_rgba(6,182,212,0.38)] text-white transition-all active:scale-95 cursor-pointer group animate-in fade-in duration-200"
     >
       <div className="flex items-center gap-1.5 min-w-0">
         <BookOpen className="w-4 h-4 text-cyan-300 shrink-0" />
@@ -2241,6 +2255,12 @@ export function Game() {
 
   const targetFps = useGameStore((state) => state.targetFps);
   const setTargetFps = useGameStore((state) => state.setTargetFps);
+  const setUiModalOpen = useGameStore((state) => state.setUiModalOpen);
+  const hasSeenControlsTutorial = useGameStore((state) => state.hasSeenControlsTutorial);
+  const setHasSeenControlsTutorial = useGameStore((state) => state.setHasSeenControlsTutorial);
+  const isControlsTutorialOpen = useGameStore((state) => state.isControlsTutorialOpen);
+  const openControlsTutorial = useGameStore((state) => state.openControlsTutorial);
+  const closeControlsTutorial = useGameStore((state) => state.closeControlsTutorial);
   const characterGender = useGameStore((state) => state.characterGender);
   const setCharacterGender = useGameStore((state) => state.setCharacterGender);
   const visorMode = useGameStore((state) => state.visorMode);
@@ -2277,6 +2297,7 @@ export function Game() {
     lastSaved: null,
   });
   const [dbHydrated, setDbHydrated] = useState(false);
+  const autoOpenedTutorialRef = useRef(false);
 
   const handleAction = useCallback((action: string) => {
     setActionRequested(action);
@@ -2302,6 +2323,9 @@ export function Game() {
         }
         if (typeof saved.explorationWithCompanion === 'boolean') {
           setExplorationWithCompanion(saved.explorationWithCompanion);
+        }
+        if (typeof saved.hasSeenControlsTutorial === 'boolean') {
+          setHasSeenControlsTutorial(saved.hasSeenControlsTutorial);
         }
         if (
           saved.menuMusicTrack === 'beethoven_op68' ||
@@ -2350,11 +2374,21 @@ export function Game() {
     setLanguage,
     setTargetFps,
     setExplorationWithCompanion,
+    setHasSeenControlsTutorial,
     setMenuMusicTrack,
     setGameMusicTrack,
     setMusicVolume,
     setSfxVolume,
   ]);
+
+  // Auto-open detailed button/controls tutorial on first entry into Story Mode or Exploration Mode
+  useEffect(() => {
+    if (!dbHydrated) return;
+    if (appStage === 'playing' && !hasSeenControlsTutorial && !autoOpenedTutorialRef.current) {
+      autoOpenedTutorialRef.current = true;
+      openControlsTutorial();
+    }
+  }, [dbHydrated, appStage, hasSeenControlsTutorial, openControlsTutorial]);
 
   // Auto-save changes to client-side database quietly in background (after initial hydration completes)
   useEffect(() => {
@@ -2369,6 +2403,7 @@ export function Game() {
       menuMusicTrack,
       gameMusicTrack,
       explorationWithCompanion,
+      hasSeenControlsTutorial,
       musicVolume,
       sfxVolume,
       audioDefaultsVersion: 2,
@@ -2386,6 +2421,7 @@ export function Game() {
     menuMusicTrack,
     gameMusicTrack,
     explorationWithCompanion,
+    hasSeenControlsTutorial,
     musicVolume,
     sfxVolume,
   ]);
@@ -2401,6 +2437,7 @@ export function Game() {
       menuMusicTrack,
       gameMusicTrack,
       explorationWithCompanion,
+      hasSeenControlsTutorial,
       musicVolume,
       sfxVolume,
       audioDefaultsVersion: 2,
@@ -2418,6 +2455,7 @@ export function Game() {
     menuMusicTrack,
     gameMusicTrack,
     explorationWithCompanion,
+    hasSeenControlsTutorial,
     musicVolume,
     sfxVolume,
     health,
@@ -2471,7 +2509,21 @@ export function Game() {
   }, [backpackLimitAlert, clearBackpackLimitAlert]);
 
   useEffect(() => {
+    setUiModalOpen(showSettings || showCharacterMenu || showInventory || isControlsTutorialOpen);
+  }, [showSettings, showCharacterMenu, showInventory, isControlsTutorialOpen, setUiModalOpen]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      if (useGameStore.getState().isControlsTutorialOpen) {
+        return;
+      }
       if (e.key === 'v' || e.key === 'V') {
         const currentVisor = useGameStore.getState().visorMode;
         useGameStore.getState().setVisorMode(currentVisor === 'transparent' ? 'gold' : 'transparent');
@@ -2546,7 +2598,16 @@ export function Game() {
   }
 
   return (
-    <div className="w-full h-screen relative bg-[#050505] overflow-hidden select-none" onClick={() => initAudio()}>
+    <div
+      className="w-full h-screen relative bg-[#050505] overflow-hidden select-none"
+      onClick={() => initAudio()}
+      onClickCapture={(e) => {
+        const btn = (e.target as HTMLElement | null)?.closest('button');
+        if (btn) {
+          requestAnimationFrame(() => btn.blur());
+        }
+      }}
+    >
       {/* 3D Canvas completely isolated from 2D HUD state updates */}
       <GameCanvas actionRequested={actionRequested} handleAction={handleAction} />
 
@@ -2559,6 +2620,7 @@ export function Game() {
       <LifeSupportCriticalAlert />
       <MissionControlCenterView />
       <ComputerBookLibraryModal />
+      <ControlsTutorialModal />
 
       {/* Action Buttons (Bottom Right) */}
       <div className="absolute bottom-6 right-6 flex flex-col gap-4 pointer-events-none">
@@ -2568,11 +2630,36 @@ export function Game() {
       {/* Top Right Controls */}
       <div className="absolute top-3 right-3 sm:top-6 sm:right-6 pointer-events-auto flex items-center gap-2 z-20">
         <button
+          type="button"
+          onClick={() => {
+            if (isControlsTutorialOpen) {
+              closeControlsTutorial(true);
+            } else {
+              if (showCharacterMenu) setShowCharacterMenu(false);
+              if (showSettings) setShowSettings(false);
+              if (showInventory) setShowInventory(false);
+              openControlsTutorial();
+            }
+          }}
+          className={`p-2 sm:p-3 rounded-2xl border transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 ${
+            isControlsTutorialOpen
+              ? 'bg-cyan-600/85 border-cyan-300 text-white shadow-lg shadow-cyan-500/25'
+              : 'bg-black/50 hover:bg-black/70 border-white/10 text-white'
+          }`}
+          title={language === 'pt' ? 'Abrir Tutorial de Botões e Controlos' : 'Open Controls & Buttons Tutorial'}
+          aria-label={language === 'pt' ? 'Tutorial' : 'Tutorial'}
+        >
+          <HelpCircle className="w-5 h-5 text-cyan-300" />
+          <span className="hidden sm:inline">{language === 'pt' ? 'Tutorial' : 'Help'}</span>
+        </button>
+
+        <button
           onClick={() => {
             setShowCharacterMenu(!showCharacterMenu);
             if (showSettings) setShowSettings(false);
+            if (isControlsTutorialOpen) closeControlsTutorial(true);
           }}
-          className={`p-2 sm:p-3 rounded-2xl backdrop-blur-md border transition-all flex items-center gap-2 text-xs font-semibold cursor-pointer active:scale-95 ${
+          className={`p-2 sm:p-3 rounded-2xl border transition-all flex items-center gap-2 text-xs font-semibold cursor-pointer active:scale-95 ${
             showCharacterMenu
               ? 'bg-blue-600/80 border-blue-400 text-white shadow-lg shadow-blue-500/25'
               : 'bg-black/50 hover:bg-black/70 border-white/10 text-white'
@@ -2587,8 +2674,9 @@ export function Game() {
           onClick={() => {
             setShowSettings(!showSettings);
             if (showCharacterMenu) setShowCharacterMenu(false);
+            if (isControlsTutorialOpen) closeControlsTutorial(true);
           }}
-          className={`p-2 sm:p-3 rounded-2xl backdrop-blur-md border transition-all flex items-center gap-2 cursor-pointer active:scale-95 ${
+          className={`p-2 sm:p-3 rounded-2xl border transition-all flex items-center gap-2 cursor-pointer active:scale-95 ${
             showSettings
               ? 'bg-cyan-600/80 border-cyan-400 text-white shadow-lg shadow-cyan-500/25'
               : 'bg-black/50 hover:bg-black/70 border-white/10 text-white'
@@ -2608,7 +2696,7 @@ export function Game() {
       {/* Mobile-Optimized Fullscreen Modal Dialogs with Backdrop Blur */}
       {showCharacterMenu && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm pointer-events-auto animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 pointer-events-auto animate-in fade-in"
           onClick={() => setShowCharacterMenu(false)}
         >
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm">
@@ -2619,7 +2707,7 @@ export function Game() {
 
       {showSettings && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm pointer-events-auto animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 pointer-events-auto animate-in fade-in"
           onClick={() => setShowSettings(false)}
         >
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm">
@@ -2631,7 +2719,7 @@ export function Game() {
       {/* Inventory Survival Backpack Modal */}
       {showInventory && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm pointer-events-auto animate-in fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 pointer-events-auto animate-in fade-in"
           onClick={() => setShowInventory(false)}
         >
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg">
@@ -2643,7 +2731,7 @@ export function Game() {
       {/* Real-time Field Resource Collection Toast */}
       {recentCollectedItem && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="flex items-center gap-3 bg-slate-900/95 backdrop-blur-xl border border-amber-400/60 px-4 py-2.5 rounded-2xl shadow-2xl text-white">
+          <div className="flex items-center gap-3 bg-slate-900/95 border border-amber-400/60 px-4 py-2.5 rounded-2xl shadow-2xl text-white">
             <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-400/30">
               <Briefcase className="w-4 h-4" />
             </div>
@@ -2667,7 +2755,7 @@ export function Game() {
       {backpackLimitAlert && (
         <div className="fixed top-36 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-200">
           <div
-            className={`flex items-center gap-3 backdrop-blur-xl px-4 py-2.5 rounded-2xl shadow-2xl border ${
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl shadow-2xl border ${
               backpackLimitAlert.reason === 'expanded'
                 ? 'bg-emerald-950/95 border-emerald-400/75 text-emerald-100'
                 : 'bg-rose-950/95 border-rose-400/75 text-rose-100'
@@ -2705,8 +2793,9 @@ export function Game() {
             setShowInventory(!showInventory);
             if (showSettings) setShowSettings(false);
             if (showCharacterMenu) setShowCharacterMenu(false);
+            if (isControlsTutorialOpen) closeControlsTutorial(true);
           }}
-          className={`relative p-3.5 sm:p-4 rounded-2xl backdrop-blur-xl border transition-all flex items-center justify-center cursor-pointer active:scale-95 shadow-xl group ${
+          className={`relative p-3.5 sm:p-4 rounded-2xl border transition-all flex items-center justify-center cursor-pointer active:scale-95 shadow-xl group ${
             showInventory
               ? 'bg-amber-500/90 border-amber-300 text-slate-950 shadow-amber-500/40 ring-2 ring-amber-400'
               : 'bg-slate-900/85 hover:bg-slate-800/90 border-amber-400/50 hover:border-amber-400 text-amber-400 shadow-black/60'

@@ -331,6 +331,7 @@ export const UI_TEXT = {
     rocketPadName: 'Foguete Pad 39A',
     capsuleName: 'Cápsula',
     boardRocket: 'Subir no Foguete',
+    boardCapsule: 'Entrar na Cápsula',
     digitalLibrary: 'Biblioteca Digital',
     openLibrary: 'Abrir Biblioteca',
 
@@ -692,6 +693,7 @@ export const UI_TEXT = {
     rocketPadName: 'Pad 39A Rocket',
     capsuleName: 'Capsule',
     boardRocket: 'Board Rocket',
+    boardCapsule: 'Board Capsule',
     digitalLibrary: 'Digital Library',
     openLibrary: 'Open Library',
 

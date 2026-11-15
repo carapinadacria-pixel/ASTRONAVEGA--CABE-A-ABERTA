@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Compass, LocateFixed, Maximize2, MapPin, Navigation } from 'lucide-react';
 import { useGameStore, PLANETS, livePlayerMotion } from '../store';
-import { UI_TEXT } from '../utils/i18n';
+import { UI_TEXT, getPlanetName } from '../utils/i18n';
 import {
   RESOURCE_DEFINITIONS,
   getSurfaceResourceNodes,
@@ -211,13 +211,14 @@ export const BackpackMapTab = React.memo(function BackpackMapTab() {
               if (px < -10 || px > viewSize + 10 || py < -10 || py > viewSize + 10) return null;
               const dotR = p.type === 'jupiter' || p.type === 'saturn' ? 5.5 : p.type === 'moon' || p.type === 'titan' ? 2.6 : 3.8;
               const distKm = (Math.hypot(p.pos.x - shipX, p.pos.z - shipZ) / 100).toFixed(1);
+              const localizedPlanetName = getPlanetName(p.id, p.name, language);
               return (
                 <g
                   key={`radar-planet-${p.id}`}
                   className="cursor-pointer"
                   onClick={() =>
                     setSelectedMarker({
-                      title: p.name,
+                      title: localizedPlanetName,
                       subtitle: `g = ${p.gravity} m/s² • ${p.type.toUpperCase()}`,
                       distLabel: `${distKm} km`,
                       color: p.atmosphereColor,
@@ -255,7 +256,7 @@ export const BackpackMapTab = React.memo(function BackpackMapTab() {
                       fontWeight="bold"
                       pointerEvents="none"
                     >
-                      {p.name.length > 11 ? `${p.name.slice(0, 10)}…` : p.name}
+                      {localizedPlanetName.length > 11 ? `${localizedPlanetName.slice(0, 10)}…` : localizedPlanetName}
                     </text>
                   )}
                 </g>
@@ -417,7 +418,7 @@ export const BackpackMapTab = React.memo(function BackpackMapTab() {
         <div className="flex items-center gap-1.5">
           <MapPin className="w-4 h-4 text-emerald-400" />
           <span className="font-bold text-slate-100">
-            {t.surfaceMapTitle} • {currentPlanet.name}
+            {t.surfaceMapTitle} • {getPlanetName(currentPlanet.id, currentPlanet.name, language)}
           </span>
         </div>
         <div className="flex items-center gap-1 bg-slate-800/80 p-0.5 rounded-xl border border-white/10">

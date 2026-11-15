@@ -26,10 +26,10 @@ import {
 import { UI_TEXT } from '../utils/i18n';
 import {
   RESOURCE_DEFINITIONS,
-  NASA_PLANETARY_DATA,
   ResourceCategory,
   ResourceDefinition,
   getLocalizedResourceDef,
+  getLocalizedPlanetaryTelemetry,
 } from '../utils/nasaData';
 import { BackpackMapTab } from './BackpackMapTab';
 import { playPickupChimeSound } from '../audio';
@@ -47,7 +47,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
   const planetIndex = useGameStore((state) => state.planetIndex);
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
   const planetId = (currentPlanet.type || 'earth').toLowerCase();
-  const planetaryTelemetry = NASA_PLANETARY_DATA[planetId] || NASA_PLANETARY_DATA.earth;
+  const planetaryTelemetry = getLocalizedPlanetaryTelemetry(planetId, language);
 
   const maxWeightKg = BASE_BACKPACK_WEIGHT_KG + backpackExpansions * BACKPACK_EXPANSION_WEIGHT_KG;
   const maxSlots = BASE_BACKPACK_SLOTS + backpackExpansions * BACKPACK_EXPANSION_SLOTS;
@@ -280,16 +280,14 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
           <div className="flex flex-col gap-2.5 p-3.5 rounded-2xl bg-blue-950/40 border border-blue-400/30 text-xs">
             <div className="flex items-center justify-between border-b border-blue-400/20 pb-2">
               <span className="font-bold text-sm text-blue-300 uppercase tracking-wide">
-                {t.sciSheetTitle} • {language === 'en' ? planetaryTelemetry.name : `${planetaryTelemetry.namePt} (${planetaryTelemetry.name})`}
+                {t.sciSheetTitle} • {planetaryTelemetry.displayTitle}
               </span>
               <span className="text-[10px] font-mono text-cyan-300 font-bold bg-blue-900/60 px-2 py-0.5 rounded">
                 NASA Fact Sheet
               </span>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed italic">
-              "{language === 'en' && planetaryTelemetry.scientificDescriptionEn
-                ? planetaryTelemetry.scientificDescriptionEn
-                : planetaryTelemetry.scientificDescription}"
+              "{planetaryTelemetry.scientificDescription}"
             </p>
             <div className="grid grid-cols-2 gap-2 mt-1 font-mono text-[11px]">
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">
@@ -301,9 +299,7 @@ export const InventoryModal = React.memo(function InventoryModal({ onClose }: In
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">
                 <span className="text-[10px] text-slate-400 block">{t.humidityLabel}</span>
                 <span className="text-sm font-bold text-emerald-300">
-                  {language === 'en' && planetaryTelemetry.averageHumidityEn
-                    ? planetaryTelemetry.averageHumidityEn
-                    : planetaryTelemetry.averageHumidity}
+                  {planetaryTelemetry.averageHumidity}
                 </span>
               </div>
               <div className="p-2 rounded-xl bg-slate-900/70 border border-white/5">

@@ -41,6 +41,7 @@ export const livePlayerMotion = {
   deepWater: false,
   yaw: 0,
   speed: 0,
+  companionSpeed: 0,
   bodyYOffset: 0,
   bodyPitch: 0,
 };
@@ -143,6 +144,13 @@ interface GameState {
   setAssemblyProgress: (val: number) => void;
   targetFps: 20 | 30 | 40 | 60;
   setTargetFps: (fps: 20 | 30 | 40 | 60) => void;
+  isUiModalOpen: boolean;
+  setUiModalOpen: (open: boolean) => void;
+  hasSeenControlsTutorial: boolean;
+  setHasSeenControlsTutorial: (seen: boolean) => void;
+  isControlsTutorialOpen: boolean;
+  openControlsTutorial: () => void;
+  closeControlsTutorial: (markSeen?: boolean) => void;
   language: Language;
   setLanguage: (lang: Language) => void;
   menuMusicTrack: GameMusicTrack;
@@ -475,6 +483,17 @@ export const useGameStore = create<GameState>((set, get) => ({
   })),
   targetFps: 20,
   setTargetFps: (fps) => set({ targetFps: fps }),
+  isUiModalOpen: false,
+  setUiModalOpen: (open) => set((state) => (state.isUiModalOpen === open ? state : { isUiModalOpen: open })),
+  hasSeenControlsTutorial: false,
+  setHasSeenControlsTutorial: (seen) => set({ hasSeenControlsTutorial: seen }),
+  isControlsTutorialOpen: false,
+  openControlsTutorial: () => set({ isControlsTutorialOpen: true }),
+  closeControlsTutorial: (markSeen = true) =>
+    set((state) => ({
+      isControlsTutorialOpen: false,
+      hasSeenControlsTutorial: markSeen ? true : state.hasSeenControlsTutorial,
+    })),
   language: 'pt',
   setLanguage: (lang) => set({ language: lang }),
   menuMusicTrack: 'beethoven_op68',

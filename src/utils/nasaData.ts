@@ -11,12 +11,15 @@ export interface PlanetaryTelemetry {
   gravity: number; // m/s^2
   gravityG: number; // G relative to Earth
   surfacePressure: string;
+  surfacePressureEn?: string;
   averageHumidity: string;
   averageHumidityEn?: string;
   temperatureKelvin: number;
   temperatureCelsius: number;
   atmosphereComposition: string;
+  atmosphereCompositionEn?: string;
   primaryResources: string[];
+  primaryResourcesEn?: string[];
   scientificDescription: string;
   scientificDescriptionEn?: string;
 }
@@ -29,12 +32,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 9.807,
     gravityG: 1.0,
     surfacePressure: '101.325 kPa (1.00 atm)',
+    surfacePressureEn: '101.325 kPa (1.00 atm)',
     averageHumidity: '65% - 85% (Ambiente Costeiro)',
     averageHumidityEn: '65% - 85% (Coastal Climate)',
     temperatureKelvin: 288,
     temperatureCelsius: 15,
     atmosphereComposition: '78.08% N₂, 20.95% O₂, 0.93% Ar, 0.04% CO₂',
+    atmosphereCompositionEn: '78.08% N₂, 20.95% O₂, 0.93% Ar, 0.04% CO₂',
     primaryResources: ['Quartzo (SiO₂)', 'Minério de Ferro', 'Titânio', 'Lítio', 'Silício', 'Água H₂O'],
+    primaryResourcesEn: ['Quartz (SiO₂)', 'Iron Ore', 'Titanium', 'Lithium', 'Silicon', 'Water H₂O'],
     scientificDescription:
       'O único corpo celeste conhecido com hidrosfera ativa e atmosfera densa de nitrogénio-oxigénio rica em vida e abundância mineral.',
     scientificDescriptionEn:
@@ -47,12 +53,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 1.62,
     gravityG: 0.165,
     surfacePressure: '3 × 10⁻¹⁰ Pa (Vácuo Duro)',
+    surfacePressureEn: '3 × 10⁻¹⁰ Pa (Hard Vacuum)',
     averageHumidity: '0.0% (Gelo apenas em crateras polares)',
     averageHumidityEn: '0.0% (Polar crater ice only)',
     temperatureKelvin: 220,
     temperatureCelsius: -53,
     atmosphereComposition: 'Vestígios de Hélio, Néon e Hidrogénio (Exosfera)',
+    atmosphereCompositionEn: 'Trace Helium, Neon & Hydrogen (Exosphere)',
     primaryResources: ['Regolito Lunar', 'Ilmenite (FeTiO₃)', 'Hélio-3 (He-3)', 'Gelo Polar H₂O'],
+    primaryResourcesEn: ['Lunar Regolith', 'Ilmenite (FeTiO₃)', 'Helium-3 (He-3)', 'Polar Water Ice H₂O'],
     scientificDescription:
       'Satélite natural da Terra com crosta de anortosito e mares basálticos ricos em ilmenite de titânio, gelo polar e isótopos de Hélio-3 solares.',
     scientificDescriptionEn:
@@ -65,12 +74,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 3.7,
     gravityG: 0.378,
     surfacePressure: '< 10⁻⁹ Pa (Exosfera Solar)',
+    surfacePressureEn: '< 10⁻⁹ Pa (Solar Exosphere)',
     averageHumidity: '0.0% (Exposição Solar Direta)',
     averageHumidityEn: '0.0% (Direct Solar Irradiation)',
     temperatureKelvin: 440,
     temperatureCelsius: 167,
     atmosphereComposition: 'O₂, Na, H₂, He, K (Exosfera Ténue)',
+    atmosphereCompositionEn: 'O₂, Na, H₂, He, K (Tenuous Exosphere)',
     primaryResources: ['Ferro Metálico Nativo', 'Silicato de Sódio', 'Ilmenite Térmica'],
+    primaryResourcesEn: ['Native Metallic Iron', 'Sodium Silicate', 'Thermal Ilmenite'],
     scientificDescription:
       'O planeta mais próximo do Sol, dotado de núcleo metálico gigantesco (~85% do raio) e planícies basálticas ricas em ferro e sódio.',
     scientificDescriptionEn:
@@ -83,12 +95,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 8.87,
     gravityG: 0.905,
     surfacePressure: '9.3 MPa (92 atm)',
+    surfacePressureEn: '9.3 MPa (92 atm)',
     averageHumidity: '0.002% (Nuvens de H₂SO₄)',
     averageHumidityEn: '0.002% (H₂SO₄ Clouds)',
     temperatureKelvin: 737,
     temperatureCelsius: 464,
     atmosphereComposition: '96.5% CO₂, 3.5% N₂, SO₂ / H₂SO₄',
+    atmosphereCompositionEn: '96.5% CO₂, 3.5% N₂, SO₂ / H₂SO₄',
     primaryResources: ['Enxofre Basáltico', 'Vapor Sulfúrico Corrosivo', 'Blindagem GGPEN'],
+    primaryResourcesEn: ['Basaltic Sulfur', 'Corrosive Sulfuric Vapor', 'GGPEN Shielding'],
     scientificDescription:
       'Mundo hiper-aquecido pelo efeito de estufa descontrolado com pressão superficial esmagadora e depósitos vulcânicos ricos em enxofre.',
     scientificDescriptionEn:
@@ -101,12 +116,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 3.721,
     gravityG: 0.38,
     surfacePressure: '0.636 kPa (0.006 atm)',
+    surfacePressureEn: '0.636 kPa (0.006 atm)',
     averageHumidity: '0.03% (Permafrost Subterrâneo)',
     averageHumidityEn: '0.03% (Subsurface Permafrost)',
     temperatureKelvin: 210,
     temperatureCelsius: -63,
     atmosphereComposition: '95.32% CO₂, 2.6% N₂, 1.9% Ar, 0.13% O₂',
+    atmosphereCompositionEn: '95.32% CO₂, 2.6% N₂, 1.9% Ar, 0.13% O₂',
     primaryResources: ['Hematite (Fe₂O₃)', 'Percloratos (ClO₄⁻)', 'Gelo Seco CO₂', 'Água H₂O'],
+    primaryResourcesEn: ['Hematite (Fe₂O₃)', 'Perchlorates (ClO₄⁻)', 'Dry CO₂ Ice', 'Water H₂O'],
     scientificDescription:
       'Planeta telúrico rico em óxidos de ferro superficiais, sais percloratos oxidantes, gelo carbónico polar e aquíferos congelados.',
     scientificDescriptionEn:
@@ -119,12 +137,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 24.79,
     gravityG: 2.53,
     surfacePressure: '100 - 1,000 kPa (Nível Aeroestático)',
+    surfacePressureEn: '100 - 1,000 kPa (Aerostat Deck)',
     averageHumidity: 'Nuvens de NH₃ & Hidrosulfureto',
     averageHumidityEn: 'NH₃ & Hydrosulfide Cloud Decks',
     temperatureKelvin: 165,
     temperatureCelsius: -108,
     atmosphereComposition: '89.8% H₂, 10.2% He, Traços de CH₄ & NH₃',
+    atmosphereCompositionEn: '89.8% H₂, 10.2% He, Trace CH₄ & NH₃',
     primaryResources: ['Hidrogénio Metálico', 'Cristais de Amoníaco', 'Célula de Plasma'],
+    primaryResourcesEn: ['Metallic Hydrogen', 'Ammonia Crystals', 'Plasma Cell'],
     scientificDescription:
       'Maior gigante gasoso do Sistema Solar com tempestades anticiclónicas de amoníaco, magnetosfera extrema e transição para hidrogénio metálico.',
     scientificDescriptionEn:
@@ -137,12 +158,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 10.44,
     gravityG: 1.065,
     surfacePressure: '140 kPa (Deck Aeroestático)',
+    surfacePressureEn: '140 kPa (Aerostat Deck)',
     averageHumidity: 'Bandas de NH₃ & Gelo de Anéis',
     averageHumidityEn: 'NH₃ Bands & Ring Ice Particles',
     temperatureKelvin: 134,
     temperatureCelsius: -139,
     atmosphereComposition: '96.3% H₂, 3.25% He, 0.45% CH₄ & NH₃',
+    atmosphereCompositionEn: '96.3% H₂, 3.25% He, 0.45% CH₄ & NH₃',
     primaryResources: ['Granizo de Diamante', 'Cristais de Amoníaco', 'Hidrogénio Metálico'],
+    primaryResourcesEn: ['Diamond Hail', 'Ammonia Crystals', 'Metallic Hydrogen'],
     scientificDescription:
       'Gigante dos anéis onde tempestades atmosféricas cristalizam carbono metânico em chuva de diamantes líquidos e sólidos em profundidade.',
     scientificDescriptionEn:
@@ -155,12 +179,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 8.69,
     gravityG: 0.886,
     surfacePressure: '120 kPa (Troposfera Superior)',
+    surfacePressureEn: '120 kPa (Upper Troposphere)',
     averageHumidity: 'Gelo Superiónico & Metano CH₄',
     averageHumidityEn: 'Superionic Ice & CH₄ Haze',
     temperatureKelvin: 76,
     temperatureCelsius: -197,
     atmosphereComposition: '82.5% H₂, 15.2% He, 2.3% CH₄',
+    atmosphereCompositionEn: '82.5% H₂, 15.2% He, 2.3% CH₄',
     primaryResources: ['Granizo de Diamante', 'Gelo Criogénico H₂O', 'Cristais de Amoníaco'],
+    primaryResourcesEn: ['Diamond Hail', 'Cryogenic Ice H₂O', 'Ammonia Crystals'],
     scientificDescription:
       'Gigante de gelo com inclinação axial extrema de 98°, manto fluido de água-amoníaco-metano e formação contínua de nanodiamantes.',
     scientificDescriptionEn:
@@ -173,12 +200,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 11.15,
     gravityG: 1.14,
     surfacePressure: '150 kPa (Nível Supersonico)',
+    surfacePressureEn: '150 kPa (Supersonic Layer)',
     averageHumidity: 'Ventos de 2,100 km/h + Metano CH₄',
     averageHumidityEn: '2,100 km/h Winds + CH₄ Clouds',
     temperatureKelvin: 72,
     temperatureCelsius: -201,
     atmosphereComposition: '80.0% H₂, 19.0% He, 1.5% CH₄',
+    atmosphereCompositionEn: '80.0% H₂, 19.0% He, 1.5% CH₄',
     primaryResources: ['Granizo de Diamante', 'Hidrogénio Metálico', 'Gelo Criogénico H₂O'],
+    primaryResourcesEn: ['Diamond Hail', 'Metallic Hydrogen', 'Cryogenic Ice H₂O'],
     scientificDescription:
       'Gigante azul profundo fustigado pelos ventos supersónicos mais velozes do Sistema Solar e precipitação energética de diamantes.',
     scientificDescriptionEn:
@@ -191,12 +221,15 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 1.352,
     gravityG: 0.138,
     surfacePressure: '146.7 kPa (1.45 atm)',
+    surfacePressureEn: '146.7 kPa (1.45 atm)',
     averageHumidity: 'Saturação de Metano Líquido',
     averageHumidityEn: 'Liquid Methane Saturation',
     temperatureKelvin: 94,
     temperatureCelsius: -179,
     atmosphereComposition: '94.2% N₂, 5.65% CH₄, 0.1% H₂',
+    atmosphereCompositionEn: '94.2% N₂, 5.65% CH₄, 0.1% H₂',
     primaryResources: ['Metano Líquido (CH₄)', 'Tolinas Orgânicas', 'Gelo Criogénico H₂O'],
+    primaryResourcesEn: ['Liquid Methane (CH₄)', 'Organic Tholins', 'Cryogenic Ice H₂O'],
     scientificDescription:
       'Maior lua de Saturno com ciclo hidrológico criogénico de metano líquido, lagos de hidrocarbonetos e dunas de tolinas pré-bióticas.',
     scientificDescriptionEn:
@@ -209,18 +242,39 @@ export const NASA_PLANETARY_DATA: Record<string, PlanetaryTelemetry> = {
     gravity: 12.0,
     gravityG: 1.22,
     surfacePressure: 'Variável (Arquivo NASA Exoplanet Archive)',
+    surfacePressureEn: 'Variable (NASA Exoplanet Archive)',
     averageHumidity: 'Espectroscopia Infravermelha NASA',
     averageHumidityEn: 'NASA IR Spectroscopy',
     temperatureKelvin: 290,
     temperatureCelsius: 17,
     atmosphereComposition: 'H₂O / CO₂ / N₂ / Silicatos Exóticos (Caltech API)',
+    atmosphereCompositionEn: 'H₂O / CO₂ / N₂ / Exotic Silicates (Caltech API)',
     primaryResources: ['Liga Superdensa', 'Cristal de Silicato Exótico', 'Gelo Criogénico / Fulgor de Plasma'],
+    primaryResourcesEn: ['Superdense Alloy', 'Exotic Silicate Crystal', 'Cryo Ice / Plasma Flare'],
     scientificDescription:
       'Mundo extrassolar catalogado em tempo real pela API do NASA Exoplanet Archive (Caltech), com mineralogia moldada por massa, raio e temperatura orbital.',
     scientificDescriptionEn:
       'Extrasolar world cataloged live via the NASA Exoplanet Archive API (Caltech), featuring exotic mineralogy shaped by orbital temperature and mass.',
   },
 };
+
+export function getLocalizedPlanetaryTelemetry(planetId: string, lang: Language) {
+  const entry = NASA_PLANETARY_DATA[planetId.toLowerCase()] || NASA_PLANETARY_DATA.earth;
+  const isEn = lang === 'en';
+  return {
+    ...entry,
+    displayTitle: isEn ? entry.name : `${entry.namePt} (${entry.name})`,
+    surfacePressure: isEn ? entry.surfacePressureEn || entry.surfacePressure : entry.surfacePressure,
+    averageHumidity: isEn ? entry.averageHumidityEn || entry.averageHumidity : entry.averageHumidity,
+    atmosphereComposition: isEn
+      ? entry.atmosphereCompositionEn || entry.atmosphereComposition
+      : entry.atmosphereComposition,
+    primaryResources: isEn ? entry.primaryResourcesEn || entry.primaryResources : entry.primaryResources,
+    scientificDescription: isEn
+      ? entry.scientificDescriptionEn || entry.scientificDescription
+      : entry.scientificDescription,
+  };
+}
 
 export type ResourceRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type ResourceCategory = 'minerals' | 'chemicals' | 'tech';

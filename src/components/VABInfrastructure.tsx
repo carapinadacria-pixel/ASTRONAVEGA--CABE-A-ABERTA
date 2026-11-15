@@ -4,17 +4,18 @@ import { Group, MathUtils, DoubleSide, CanvasTexture, SRGBColorSpace } from 'thr
 import { RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
 import { Text } from '@react-three/drei';
 import { useGameStore } from '../store';
-import { UI_TEXT } from '../utils/i18n';
+import { UI_TEXT, Language } from '../utils/i18n';
 import { playDoorOpenSound, playDoorCloseSound } from '../audio';
 import { AngolaFlagDecal, GGPENLogoDecal, NasaSpaceAppsLuandaDecal } from './AngolaFlag';
 import { HangarStairs } from './HangarStairs';
 import { RocketAssemblyBay } from './RocketAssemblyBay';
 
-// Module-level cache for high-resolution industrial blast door textures
-let cachedDoorTextures: { left: CanvasTexture; right: CanvasTexture } | null = null;
+// Module-level cache for high-resolution industrial blast door textures per language
+const cachedDoorTextures: Partial<Record<Language, { left: CanvasTexture; right: CanvasTexture }>> = {};
 
-function getHangarDoorTextures(): { left: CanvasTexture | null; right: CanvasTexture | null } {
-  if (cachedDoorTextures) return cachedDoorTextures;
+function getHangarDoorTextures(language: Language): { left: CanvasTexture | null; right: CanvasTexture | null } {
+  const cached = cachedDoorTextures[language];
+  if (cached) return cached;
   if (typeof document === 'undefined') return { left: null, right: null };
 
   function drawDoor(isRight: boolean): CanvasTexture {
@@ -137,11 +138,12 @@ function getHangarDoorTextures(): { left: CanvasTexture | null; right: CanvasTex
     ctx.lineWidth = 2;
     ctx.strokeRect(132, centerY - 268, width - 264, 536);
 
+    const isEn = language === 'en';
     // Text markings
     ctx.textAlign = 'center';
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 36px monospace';
-    ctx.fillText('• REPÚBLICA DE ANGOLA •', width / 2, centerY - 200);
+    ctx.fillText(isEn ? '• REPUBLIC OF ANGOLA •' : '• REPÚBLICA DE ANGOLA •', width / 2, centerY - 200);
 
     ctx.fillStyle = '#ffffff';
     ctx.font = '900 68px sans-serif';
@@ -149,18 +151,18 @@ function getHangarDoorTextures(): { left: CanvasTexture | null; right: CanvasTex
       ctx.fillText('GGPEN • VAB 01', width / 2, centerY - 110);
       ctx.fillStyle = '#facc15';
       ctx.font = 'bold 34px sans-serif';
-      ctx.fillText('PORTÃO DE ALTA PRESSÃO', width / 2, centerY - 50);
+      ctx.fillText(isEn ? 'HIGH-PRESSURE BLAST GATE' : 'PORTÃO DE ALTA PRESSÃO', width / 2, centerY - 50);
       ctx.fillStyle = '#94a3b8';
       ctx.font = 'bold 26px sans-serif';
-      ctx.fillText('VÃO LIVRE 32M • MONTAGEM VERTICAL', width / 2, centerY);
+      ctx.fillText(isEn ? '32M CLEARANCE • VERTICAL ASSEMBLY' : 'VÃO LIVRE 32M • MONTAGEM VERTICAL', width / 2, centerY);
     } else {
-      ctx.fillText('CENTRO ESPACIAL', width / 2, centerY - 110);
+      ctx.fillText(isEn ? 'SPACE CENTER' : 'CENTRO ESPACIAL', width / 2, centerY - 110);
       ctx.fillStyle = '#38bdf8';
       ctx.font = 'bold 34px sans-serif';
-      ctx.fillText('INTEGRAÇÃO DE VEÍCULOS', width / 2, centerY - 50);
+      ctx.fillText(isEn ? 'VEHICLE INTEGRATION' : 'INTEGRAÇÃO DE VEÍCULOS', width / 2, centerY - 50);
       ctx.fillStyle = '#94a3b8';
       ctx.font = 'bold 26px sans-serif';
-      ctx.fillText('ACESSO RESTRITO • EQUIPE EVA', width / 2, centerY);
+      ctx.fillText(isEn ? 'RESTRICTED ACCESS • EVA CREW' : 'ACESSO RESTRITO • EQUIPE EVA', width / 2, centerY);
     }
 
     // Technical specs box
@@ -171,11 +173,11 @@ function getHangarDoorTextures(): { left: CanvasTexture | null; right: CanvasTex
 
     ctx.fillStyle = '#f87171';
     ctx.font = 'bold 24px monospace';
-    ctx.fillText('▲ ATENÇÃO: OPERAÇÃO AUTOMÁTICA ▲', width / 2, centerY + 95);
+    ctx.fillText(isEn ? '▲ WARNING: AUTOMATIC OPERATION ▲' : '▲ ATENÇÃO: OPERAÇÃO AUTOMÁTICA ▲', width / 2, centerY + 95);
     ctx.fillStyle = '#cbd5e1';
     ctx.font = '20px monospace';
-    ctx.fillText('MANTER DISTÂNCIA DURANTE ABERTURA / FECHO', width / 2, centerY + 135);
-    ctx.fillText('PRESSURIZAÇÃO ATIVA • SELAGEM HERMÉTICA', width / 2, centerY + 168);
+    ctx.fillText(isEn ? 'KEEP CLEAR DURING OPENING / CLOSING' : 'MANTER DISTÂNCIA DURANTE ABERTURA / FECHO', width / 2, centerY + 135);
+    ctx.fillText(isEn ? 'PRESSURIZATION ACTIVE • HERMETIC SEAL' : 'PRESSURIZAÇÃO ATIVA • SELAGEM HERMÉTICA', width / 2, centerY + 168);
 
     const tex = new CanvasTexture(canvas);
     tex.colorSpace = SRGBColorSpace;
@@ -186,8 +188,8 @@ function getHangarDoorTextures(): { left: CanvasTexture | null; right: CanvasTex
 
   const left = drawDoor(false);
   const right = drawDoor(true);
-  cachedDoorTextures = { left, right };
-  return cachedDoorTextures;
+  cachedDoorTextures[language] = { left, right };
+  return { left, right };
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +206,7 @@ export function VABInfrastructure() {
   const t = UI_TEXT[language];
 
   // High-resolution procedural textures for corrugated aerospace blast doors
-  const doorTextures = useMemo(() => getHangarDoorTextures(), []);
+  const doorTextures = useMemo(() => getHangarDoorTextures(language), [language]);
 
   // Door and mechanical animation refs
   const leftDoorRef = useRef<Group>(null);
@@ -490,7 +492,9 @@ export function VABInfrastructure() {
           letterSpacing={0.12}
           anchorX="center"
         >
-          REPÚBLICA DE ANGOLA • PROGRAMA ESPACIAL NACIONAL
+          {language === 'en'
+            ? 'REPUBLIC OF ANGOLA • NATIONAL SPACE PROGRAM'
+            : 'REPÚBLICA DE ANGOLA • PROGRAMA ESPACIAL NACIONAL'}
         </Text>
 
         {/* Left Side: Authentic NASA Space Apps Luanda Logo (Height = 15.8m, Width = 29.7m) */}
@@ -520,7 +524,9 @@ export function VABInfrastructure() {
           letterSpacing={0.1}
           anchorX="center"
         >
-          CENTRO DE INTEGRAÇÃO & MONTAGEM DE VEÍCULOS ESPACIAIS
+          {language === 'en'
+            ? 'SPACECRAFT INTEGRATION & ASSEMBLY CENTER'
+            : 'CENTRO DE INTEGRAÇÃO & MONTAGEM DE VEÍCULOS ESPACIAIS'}
         </Text>
 
         {/* Architectural Accent Floodlights for Night Operations */}
@@ -580,7 +586,11 @@ export function VABInfrastructure() {
             fontWeight="bold"
             anchorX="center"
           >
-            {isHabitatDoorOpen
+            {language === 'en'
+              ? isHabitatDoorOpen
+                ? 'HANGAR GATE: OPEN • 32M CLEARANCE'
+                : 'HANGAR GATE: FULLY CLOSED • SEAL ACTIVE'
+              : isHabitatDoorOpen
               ? 'PORTÃO DO HANGAR: ABERTO • VÃO LIVRE 32M'
               : 'PORTÃO DO HANGAR: TOTALMENTE FECHADO • SELAGEM ATIVA'}
           </Text>
@@ -724,7 +734,7 @@ export function VABInfrastructure() {
             fontWeight="bold"
             anchorX="center"
           >
-            PORTA DO HANGAR [E]
+            {language === 'en' ? 'HANGAR DOOR [E]' : 'PORTA DO HANGAR [E]'}
           </Text>
         </group>
 
@@ -750,7 +760,7 @@ export function VABInfrastructure() {
             fontWeight="bold"
             anchorX="center"
           >
-            PORTA DO HANGAR [E]
+            {language === 'en' ? 'HANGAR DOOR [E]' : 'PORTA DO HANGAR [E]'}
           </Text>
         </group>
         {/* External & Internal Door Control Pedestal Colliders */}
@@ -1093,18 +1103,24 @@ export function VABInfrastructure() {
                 </mesh>
                 <Text position={[0, 0.12, 0.08]} fontSize={0.14} color="#f8fafc" fontWeight="bold" anchorX="center">
                   {j === 0
-                    ? 'PAISAGENS CÓSMICAS'
+                    ? language === 'en'
+                      ? 'COSMIC LANDSCAPES'
+                      : 'PAISAGENS CÓSMICAS'
                     : j === 1
-                    ? 'ASTRONOMIA & ASTROFÍSICA'
+                    ? language === 'en'
+                      ? 'ASTRONOMY & ASTROPHYSICS'
+                      : 'ASTRONOMIA & ASTROFÍSICA'
                     : 'NASA DISCOVERY PROGRAM'}
                 </Text>
                 <Text position={[0, -0.18, 0.08]} fontSize={0.11} color="#fde047" fontWeight="bold" anchorX="center">
-                  [CLIQUE PARA LER LIVRO]
+                  {language === 'en' ? '[CLICK TO READ BOOK]' : '[CLIQUE PARA LER LIVRO]'}
                 </Text>
               </group>
             ))}
             <Text position={[0, 2.55, -0.3]} fontSize={0.24} color="#38bdf8" fontWeight="bold" anchorX="center">
-              COMPUTADORES DE INVESTIGAÇÃO • BIBLIOTECA CIENTÍFICA [CLIQUE / C]
+              {language === 'en'
+                ? 'RESEARCH COMPUTERS • SCIENTIFIC LIBRARY [CLICK / C]'
+                : 'COMPUTADORES DE INVESTIGAÇÃO • BIBLIOTECA CIENTÍFICA [CLIQUE / C]'}
             </Text>
           </group>
         ))}

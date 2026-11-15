@@ -24,7 +24,7 @@ import {
   MathUtils,
 } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { useGameStore } from '../store';
+import { useGameStore, livePlayerMotion } from '../store';
 import { getOfficialAngolaFlagTexture } from './AngolaFlag';
 
 // Reusable scratch objects for per-frame procedural bone rotations
@@ -41,6 +41,7 @@ interface AstronautCharacterProps {
   isJumping: boolean;
   hasSpacesuit?: boolean;
   carryingFlag?: boolean;
+  motionRole?: 'player' | 'companion';
 }
 
 // Certified Aerospace Spacesuit Color Palettes
@@ -109,6 +110,7 @@ export const AstronautCharacter = React.memo(function AstronautCharacter({
   isJumping,
   hasSpacesuit = true,
   carryingFlag = false,
+  motionRole = 'player',
 }: AstronautCharacterProps) {
   const theme = SUIT_THEMES[suitStyle] || SUIT_THEMES.white;
 
@@ -123,6 +125,7 @@ export const AstronautCharacter = React.memo(function AstronautCharacter({
       isJumping={isJumping}
       hasSpacesuit={hasSpacesuit}
       carryingFlag={carryingFlag}
+      motionRole={motionRole}
     />
   );
 });
@@ -141,6 +144,7 @@ function AstronautModel({
   isJumping,
   hasSpacesuit = true,
   carryingFlag = false,
+  motionRole = 'player',
 }: {
   gender: 'male' | 'female';
   visorMode: 'transparent' | 'gold';
@@ -150,6 +154,7 @@ function AstronautModel({
   isJumping: boolean;
   hasSpacesuit?: boolean;
   carryingFlag?: boolean;
+  motionRole?: 'player' | 'companion';
 }) {
   const groupRef = useRef<Group>(null);
   const beaconRef = useRef<Mesh | null>(null);
@@ -328,12 +333,19 @@ function AstronautModel({
     const prev = currentAction.current;
 
     if (target && prev !== actionName) {
+      const blendDuration = actionName === 'jump' ? 0.04 : actionName === 'idle' ? 0.06 : 0.04;
+      Object.entries(actions).forEach(([k, act]) => {
+        if (act && k !== prev && k !== actionName) {
+          act.stop();
+        }
+      });
       const prevAction = actions[prev];
-      const blendDuration = actionName === 'jump' ? 0.08 : actionName === 'run' ? 0.12 : 0.14;
       if (prevAction && prevAction !== target) {
         prevAction.fadeOut(blendDuration);
       }
-      target.reset().fadeIn(blendDuration).play();
+      target.enabled = true;
+      target.paused = false;
+      target.reset().setEffectiveWeight(1).fadeIn(blendDuration).play();
       currentAction.current = actionName;
     }
   }, [actions, actionName]);
@@ -354,19 +366,62 @@ function AstronautModel({
       Object.values(actions).forEach((act) => {
         if (act && act.isRunning()) act.stop();
       });
-    } else if (actions && currentAction.current && actions[currentAction.current]) {
+    } else if (actions) {
+      // Immediate same-frame clip switch for main player locomotion (zero React commit lag on W / ArrowUp!)
+      const desiredLocomotion =
+        motionRole === 'player' &&
+        actionName !== 'dead' &&
+        (livePlayerMotion.action === 'idle' ||
+          livePlayerMotion.action === 'walk' ||
+          livePlayerMotion.action === 'run' ||
+          livePlayerMotion.action === 'jump')
+          ? livePlayerMotion.action
+          : actionName;
+
+      if (
+        (desiredLocomotion === 'idle' ||
+          desiredLocomotion === 'walk' ||
+          desiredLocomotion === 'run' ||
+          desiredLocomotion === 'jump') &&
+        desiredLocomotion !== currentAction.current
+      ) {
+        const nextAct = actions[desiredLocomotion] || actions['idle'];
+        const prevKey = currentAction.current;
+        const prevAct = actions[prevKey];
+        if (nextAct) {
+          const blendDur = desiredLocomotion === 'jump' ? 0.04 : desiredLocomotion === 'idle' ? 0.06 : 0.04;
+          Object.entries(actions).forEach(([k, a]) => {
+            if (a && k !== prevKey && k !== desiredLocomotion) {
+              a.stop();
+            }
+          });
+          if (prevAct && prevAct !== nextAct) {
+            prevAct.fadeOut(blendDur);
+          }
+          nextAct.enabled = true;
+          nextAct.paused = false;
+          nextAct.reset().setEffectiveWeight(1).fadeIn(blendDur).play();
+          currentAction.current = desiredLocomotion;
+        }
+      }
+
       const act = actions[currentAction.current];
-      const realSpeed = Math.max(speed || 0, store.playerSpeed ?? 0);
-      if (currentAction.current === 'walk') {
-        const naturalMocapWalkSpeed = isFemale ? 2.05 : 2.15;
-        const targetScale = realSpeed > 0.05 ? realSpeed / naturalMocapWalkSpeed : 1.0;
-        act.timeScale = Math.max(0.35, Math.min(1.85, targetScale));
-      } else if (currentAction.current === 'run') {
-        const naturalMocapRunSpeed = isFemale ? 6.2 : 6.6;
-        const targetScale = realSpeed > 0.05 ? realSpeed / naturalMocapRunSpeed : 1.0;
-        act.timeScale = Math.max(0.6, Math.min(1.9, targetScale));
-      } else {
-        act.timeScale = 1.0;
+      if (act) {
+        act.enabled = true;
+        act.paused = false;
+        const liveSpeed = motionRole === 'companion' ? livePlayerMotion.companionSpeed : livePlayerMotion.speed;
+        const realSpeed = liveSpeed > 0.02 ? liveSpeed : (speed || 0);
+        if (currentAction.current === 'walk') {
+          const naturalMocapWalkSpeed = isFemale ? 2.55 : 2.65;
+          const targetScale = realSpeed > 0.05 ? realSpeed / naturalMocapWalkSpeed : 1.05;
+          act.timeScale = Math.max(0.95, Math.min(1.65, targetScale));
+        } else if (currentAction.current === 'run') {
+          const naturalMocapRunSpeed = isFemale ? 7.8 : 8.1;
+          const targetScale = realSpeed > 0.05 ? realSpeed / naturalMocapRunSpeed : 1.0;
+          act.timeScale = Math.max(0.75, Math.min(1.30, targetScale));
+        } else {
+          act.timeScale = 1.0;
+        }
       }
     }
 
@@ -384,7 +439,18 @@ function AstronautModel({
 
     if (!isSeatedInCar) {
       const { hips, leftLeg, rightLeg, leftFoot, rightFoot, leftHand, rightHand } = swimBones;
-      if (hips) hips.position.set(0, hipsRestY, 0);
+      if (hips) {
+        const allowPelvisBounce =
+          !isProceduralActive &&
+          (currentAction.current === 'walk' || currentAction.current === 'run' || currentAction.current === 'jump');
+        if (allowPelvisBounce) {
+          hips.position.x = 0;
+          hips.position.z = 0;
+          hips.position.y = MathUtils.clamp(hips.position.y, hipsRestY - 0.14, hipsRestY + 0.12);
+        } else {
+          hips.position.set(0, hipsRestY, 0);
+        }
+      }
       if (leftLeg && leftLeg.scale.x !== 1) leftLeg.scale.setScalar(1);
       if (rightLeg && rightLeg.scale.x !== 1) rightLeg.scale.setScalar(1);
       if (leftFoot && leftFoot.scale.x !== 1) leftFoot.scale.setScalar(1);

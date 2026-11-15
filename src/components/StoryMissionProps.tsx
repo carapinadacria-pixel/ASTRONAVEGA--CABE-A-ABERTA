@@ -194,7 +194,7 @@ export function StoryCompanion() {
     companionPassengerSync.bodyGroup = bodyGroupRef.current;
     const store = useGameStore.getState();
     if (store.gameMode === 'exploration' && !store.explorationWithCompanion) return;
-    const delta = Math.min(rawDelta, 0.05);
+    const delta = Math.min(rawDelta, 0.08);
     const pPos = store.playerPosition;
 
     // Reset companion position neatly beside player upon switching planets
@@ -243,6 +243,7 @@ export function StoryCompanion() {
           bodyGroupRef.current.rotation.set(0, 0, 0);
         }
 
+        livePlayerMotion.companionSpeed = 0;
         if (actionRef.current !== 'passenger') {
           actionRef.current = 'passenger';
           setActionName('passenger');
@@ -300,16 +301,18 @@ export function StoryCompanion() {
     const dist = Math.hypot(dx, dz);
 
     let nextAct: CompanionAction = 'idle';
+    let companionActualSpeed = 0;
 
     if (dist > 0.35) {
-      const baseFollowSpeed = dist > 5.5 ? 11.5 : dist > 1.8 ? 6.2 : 3.6;
+      const baseFollowSpeed = dist > 5.5 ? 9.6 : dist > 1.8 ? 4.3 : 3.5;
       const moveSpeed = livePlayerMotion.deepWater
         ? Math.max(4.4, livePlayerMotion.speed * 1.05)
         : livePlayerMotion.action === 'run'
-        ? Math.max(baseFollowSpeed, livePlayerMotion.speed * 0.95)
-        : baseFollowSpeed;
+        ? Math.min(9.8, Math.max(baseFollowSpeed, livePlayerMotion.speed * 0.98))
+        : Math.min(8.2, baseFollowSpeed);
 
       const step = Math.min(dist, moveSpeed * delta);
+      companionActualSpeed = step / Math.max(delta, 0.001);
       posRef.current[0] += (dx / dist) * step;
       posRef.current[2] += (dz / dist) * step;
 
@@ -320,7 +323,7 @@ export function StoryCompanion() {
       } else if (livePlayerMotion.isJumping) {
         nextAct = 'jump';
       } else {
-        nextAct = moveSpeed > 7.2 || livePlayerMotion.action === 'run' ? 'run' : 'walk';
+        nextAct = moveSpeed > 6.6 || livePlayerMotion.action === 'run' ? 'run' : 'walk';
       }
 
       const targetYaw =
@@ -328,7 +331,7 @@ export function StoryCompanion() {
       let diff = targetYaw - rotYRef.current;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
-      rotYRef.current += diff * (1 - Math.exp(-10 * delta));
+      rotYRef.current += diff * (1 - Math.exp(-15 * delta));
     } else {
       if (livePlayerMotion.action === 'climb') {
         nextAct = 'climb';
@@ -411,6 +414,8 @@ export function StoryCompanion() {
       );
     }
 
+    livePlayerMotion.companionSpeed = companionActualSpeed;
+
     if (nextAct !== actionRef.current) {
       actionRef.current = nextAct;
       setActionName(nextAct);
@@ -428,10 +433,11 @@ export function StoryCompanion() {
           visorMode={visorMode}
           suitStyle={suitStyle}
           actionName={actionName}
-          speed={actionName === 'swim' ? 2.8 : actionName === 'run' ? 16.0 : 8.5}
+          speed={actionName === 'swim' ? 2.8 : actionName === 'run' ? 9.6 : 5.7}
           isJumping={actionName === 'jump'}
           hasSpacesuit={companionHasSuit}
           carryingFlag={false}
+          motionRole="companion"
         />
       </group>
     </group>

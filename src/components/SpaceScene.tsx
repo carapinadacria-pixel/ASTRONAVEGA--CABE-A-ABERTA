@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useGameStore, PLANETS, PlanetInfo } from '../store';
 import {
   Vector3,
@@ -53,8 +53,12 @@ function PlanetDistantBeacon({
   planet: CosmicPlanet;
   isExoplanet: boolean;
 }) {
+  const language = useGameStore((s) => s.language);
+  const localizedName = getPlanetName(planet.id, planet.name, language);
   const spriteRef = useRef<Sprite>(null);
   const spriteMatRef = useRef<SpriteMaterial>(null);
+  const coreSpriteRef = useRef<Sprite>(null);
+  const coreSpriteMatRef = useRef<SpriteMaterial>(null);
   const labelGroupRef = useRef<Group>(null);
   const glowTex = useMemo(() => getSunFarGlowTexture(), []);
 
@@ -63,19 +67,25 @@ function PlanetDistantBeacon({
     _planetBeaconWorldPos.copy(planet.pos);
     const dist = _planetBeaconCamPos.distanceTo(_planetBeaconWorldPos);
 
+    const farRatio = MathUtils.clamp((dist - planet.visualRadius * 1.8) / (planet.visualRadius * 4.5), 0, 1);
+    const beaconScale = Math.max(planet.visualRadius * 2.9, dist * 0.048);
+
     if (spriteRef.current && spriteMatRef.current) {
-      // Keep a crisp luminous star-beacon visible at extreme orbital distances, fading smoothly up close
-      const farRatio = MathUtils.clamp((dist - planet.visualRadius * 2.2) / (planet.visualRadius * 6.0), 0, 1);
-      const beaconScale = Math.max(planet.visualRadius * 2.6, dist * 0.036);
       spriteRef.current.scale.set(beaconScale, beaconScale, 1);
-      spriteMatRef.current.opacity = farRatio * 0.88;
+      spriteMatRef.current.opacity = farRatio * 0.96;
       spriteRef.current.visible = farRatio > 0.02;
+    }
+
+    if (coreSpriteRef.current && coreSpriteMatRef.current) {
+      const coreScale = beaconScale * 0.42;
+      coreSpriteRef.current.scale.set(coreScale, coreScale, 1);
+      coreSpriteMatRef.current.opacity = farRatio * 0.85;
+      coreSpriteRef.current.visible = farRatio > 0.02;
     }
 
     if (labelGroupRef.current) {
       labelGroupRef.current.lookAt(_planetBeaconCamPos);
-      // Gently boost label legibility from afar while keeping natural proportions up close
-      const labelScale = MathUtils.clamp(dist / Math.max(1, planet.visualRadius * 14), 1.0, 4.5);
+      const labelScale = MathUtils.clamp(dist / Math.max(1, planet.visualRadius * 9.5), 1.0, 9.0);
       labelGroupRef.current.scale.setScalar(labelScale);
     }
   });
@@ -86,30 +96,44 @@ function PlanetDistantBeacon({
   return (
     <>
       {glowTex && (
-        <sprite ref={spriteRef} frustumCulled={false}>
-          <spriteMaterial
-            ref={spriteMatRef}
-            map={glowTex}
-            color={planet.atmosphereColor}
-            transparent
-            opacity={0.75}
-            blending={AdditiveBlending}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </sprite>
+        <>
+          <sprite ref={spriteRef} renderOrder={2} frustumCulled={false}>
+            <spriteMaterial
+              ref={spriteMatRef}
+              map={glowTex}
+              color={planet.atmosphereColor}
+              transparent
+              opacity={0.9}
+              blending={AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </sprite>
+          <sprite ref={coreSpriteRef} renderOrder={3} frustumCulled={false}>
+            <spriteMaterial
+              ref={coreSpriteMatRef}
+              map={glowTex}
+              color="#ffffff"
+              transparent
+              opacity={0.8}
+              blending={AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </sprite>
+        </>
       )}
 
-      <group ref={labelGroupRef} position={[0, planet.visualRadius * 1.32, 0]} frustumCulled={false}>
+      <group ref={labelGroupRef} position={[0, planet.visualRadius * 1.38, 0]} frustumCulled={false}>
         <Text
           fontSize={titleSize}
           color="#ffffff"
           fontWeight="bold"
-          outlineWidth={1.2}
+          outlineWidth={1.4}
           outlineColor="#020617"
           frustumCulled={false}
         >
-          {planet.name.toUpperCase()}
+          {localizedName.toUpperCase()}
         </Text>
 
         <Text
@@ -117,14 +141,44 @@ function PlanetDistantBeacon({
           fontSize={subSize}
           color={planet.atmosphereColor}
           fontWeight="bold"
-          outlineWidth={0.8}
+          outlineWidth={0.9}
           outlineColor="#020617"
           frustumCulled={false}
         >
-          {isExoplanet ? 'EXOPLANETA CONFIRMADO (NASA)' : `GRAVIDADE: ${(planet.gravity / 9.8).toFixed(2)}G`}
+          {isExoplanet
+            ? language === 'en'
+              ? 'CONFIRMED EXOPLANET (NASA)'
+              : 'EXOPLANETA CONFIRMADO (NASA)'
+            : `${language === 'en' ? 'GRAVITY' : 'GRAVIDADE'}: ${(planet.gravity / 9.8).toFixed(2)}G`}
         </Text>
       </group>
     </>
+  );
+}
+
+function CosmicPlanetBody({
+  planet,
+  children,
+}: {
+  planet: CosmicPlanet;
+  children: React.ReactNode;
+}) {
+  const bodyGroupRef = useRef<Group>(null);
+
+  useFrame((state) => {
+    if (!bodyGroupRef.current) return;
+    const dist = state.camera.position.distanceTo(planet.pos);
+    // Boost apparent planetary sphere visibility cleanly at long orbital range while preserving true 1:1 scale on approach
+    const farBlend = MathUtils.clamp((dist - 9000) / 9000, 0, 1);
+    const desiredScale = MathUtils.clamp((dist * 0.011) / Math.max(1, planet.visualRadius), 1.0, 2.4);
+    const finalScale = MathUtils.lerp(1.0, desiredScale, farBlend);
+    bodyGroupRef.current.scale.setScalar(finalScale);
+  });
+
+  return (
+    <group ref={bodyGroupRef} frustumCulled={false}>
+      {children}
+    </group>
   );
 }
 
@@ -274,6 +328,7 @@ export function SpaceScene() {
   const visualCapsuleRef = useRef<Group>(null);
   const initializedSpawnRef = useRef(false);
   const { setPlanet, loadExoplanets } = useGameStore();
+  const language = useGameStore((s) => s.language);
   const speedRef = useRef(180);
   const pitchVelRef = useRef(0);
   const yawVelRef = useRef(0);
@@ -298,6 +353,15 @@ export function SpaceScene() {
     distKm: 0,
   });
   const [, getKeys] = useKeyboardControls();
+  const camera = useThree((state) => state.camera);
+
+  // Configure deep-space camera clipping planes so the Sun (0,0,0) and all distant planets render continuously
+  React.useEffect(() => {
+    const cam = camera as any;
+    cam.near = 1.8;
+    cam.far = 380000;
+    cam.updateProjectionMatrix?.();
+  }, [camera]);
 
   // Load NASA exoplanets on mount & sync initial staging state
   React.useEffect(() => {
@@ -353,7 +417,13 @@ export function SpaceScene() {
 
   useFrame((state, rawDelta) => {
     if (!rocketRef.current) return;
-    const delta = Math.min(rawDelta, 0.05);
+    const cam = state.camera as any;
+    if (cam.far < 300000 || cam.near !== 1.8) {
+      cam.near = 1.8;
+      cam.far = 380000;
+      cam.updateProjectionMatrix?.();
+    }
+    const delta = Math.min(rawDelta, 0.08);
 
     // Initialize capsule in high orbit outside the departure planet on first frame
     if (!initializedSpawnRef.current && planetPositions.length > 0) {
@@ -477,10 +547,17 @@ export function SpaceScene() {
       rollAngleRef.current = MathUtils.damp(rollAngleRef.current, 0, 5.0, delta);
       pitchTiltRef.current = MathUtils.damp(pitchTiltRef.current, 0, 5.0, delta);
     } else {
-      const { forward, backward, left, right, jump, sprint } = getKeys();
-      const joystick = storeState.joystick || { x: 0, y: 0 };
-      const mobileJump = storeState.mobileJump;
-      const mobileSprint = storeState.mobileSprint;
+      const modalsOpen = storeState.isUiModalOpen || storeState.isComputerLibraryOpen;
+      const rawKeys = getKeys();
+      const forward = !modalsOpen && rawKeys.forward;
+      const backward = !modalsOpen && rawKeys.backward;
+      const left = !modalsOpen && rawKeys.left;
+      const right = !modalsOpen && rawKeys.right;
+      const jump = !modalsOpen && rawKeys.jump;
+      const sprint = !modalsOpen && rawKeys.sprint;
+      const joystick = !modalsOpen ? storeState.joystick || { x: 0, y: 0 } : { x: 0, y: 0 };
+      const mobileJump = !modalsOpen && storeState.mobileJump;
+      const mobileSprint = !modalsOpen && storeState.mobileSprint;
 
       const joyMag = Math.min(1, Math.hypot(joystick.x, joystick.y));
       const hasJoyInput = joyMag > 0.05;
@@ -699,78 +776,80 @@ export function SpaceScene() {
 
         return (
           <group key={p.id} position={p.pos} frustumCulled={false}>
-            {/* Primary Planetary Sphere with Specialized Realism Textures */}
-            {isEarth ? (
-              <RealisticEarthGlobe
-                radius={p.visualRadius}
-                sunDirection={[-p.pos.x, -p.pos.y, -p.pos.z]}
-                rotationSpeed={0.012}
-                cloudSpeed={0.020}
-                earthshine={0.08}
-                segments={64}
-              />
-            ) : isJupiter ? (
-              <Sphere args={[p.visualRadius, 64, 64]} frustumCulled={false}>
-                <meshStandardMaterial
-                  map={jupiterMap || undefined}
-                  color="#ffffff"
-                  roughness={0.7}
-                  metalness={0.05}
+            <CosmicPlanetBody planet={p}>
+              {/* Primary Planetary Sphere with Specialized Realism Textures */}
+              {isEarth ? (
+                <RealisticEarthGlobe
+                  radius={p.visualRadius}
+                  sunDirection={[-p.pos.x, -p.pos.y, -p.pos.z]}
+                  rotationSpeed={0.012}
+                  cloudSpeed={0.020}
+                  earthshine={0.08}
+                  segments={64}
                 />
-              </Sphere>
-            ) : isSaturn ? (
-              <RealisticSaturnGlobe
-                radius={p.visualRadius}
-                sunDirection={[-p.pos.x, -p.pos.y, -p.pos.z]}
-                planetWorldPos={[p.pos.x, p.pos.y, p.pos.z]}
-              />
-            ) : isMars ? (
-              <Sphere args={[p.visualRadius, 48, 48]} frustumCulled={false}>
-                <meshStandardMaterial
-                  map={marsMap || undefined}
-                  color="#ffffff"
-                  roughness={0.8}
-                  metalness={0.1}
+              ) : isJupiter ? (
+                <Sphere args={[p.visualRadius, 64, 64]} frustumCulled={false}>
+                  <meshStandardMaterial
+                    map={jupiterMap || undefined}
+                    color="#ffffff"
+                    roughness={0.7}
+                    metalness={0.05}
+                  />
+                </Sphere>
+              ) : isSaturn ? (
+                <RealisticSaturnGlobe
+                  radius={p.visualRadius}
+                  sunDirection={[-p.pos.x, -p.pos.y, -p.pos.z]}
+                  planetWorldPos={[p.pos.x, p.pos.y, p.pos.z]}
                 />
-              </Sphere>
-            ) : isVenus ? (
-              <Sphere args={[p.visualRadius, 48, 48]} frustumCulled={false}>
-                <meshStandardMaterial
-                  map={venusMap || undefined}
-                  color="#ffffff"
-                  roughness={0.6}
-                  metalness={0.05}
-                />
-              </Sphere>
-            ) : (
-              <Sphere args={[p.visualRadius, 48, 48]} frustumCulled={false}>
-                <meshStandardMaterial
-                  color={p.color || '#e2e8f0'}
-                  metalness={0.15}
-                  roughness={0.75}
-                />
-              </Sphere>
-            )}
+              ) : isMars ? (
+                <Sphere args={[p.visualRadius, 48, 48]} frustumCulled={false}>
+                  <meshStandardMaterial
+                    map={marsMap || undefined}
+                    color="#ffffff"
+                    roughness={0.8}
+                    metalness={0.1}
+                  />
+                </Sphere>
+              ) : isVenus ? (
+                <Sphere args={[p.visualRadius, 48, 48]} frustumCulled={false}>
+                  <meshStandardMaterial
+                    map={venusMap || undefined}
+                    color="#ffffff"
+                    roughness={0.6}
+                    metalness={0.05}
+                  />
+                </Sphere>
+              ) : (
+                <Sphere args={[p.visualRadius, 48, 48]} frustumCulled={false}>
+                  <meshStandardMaterial
+                    color={p.color || '#e2e8f0'}
+                    metalness={0.15}
+                    roughness={0.75}
+                  />
+                </Sphere>
+              )}
 
-            {/* Glowing Atmospheric Aura / Translucent Atmosphere Shell (Earth & Saturn use custom Fresnel shaders) */}
-            {!isEarth && !isSaturn && (
-              <Sphere args={[p.visualRadius * 1.06, 36, 36]} frustumCulled={false}>
-                <meshBasicMaterial
-                  color={p.atmosphereColor}
-                  transparent
-                  opacity={0.22}
-                  depthWrite={false}
-                />
-              </Sphere>
-            )}
+              {/* Glowing Atmospheric Aura / Translucent Atmosphere Shell (Earth & Saturn use custom Fresnel shaders) */}
+              {!isEarth && !isSaturn && (
+                <Sphere args={[p.visualRadius * 1.06, 36, 36]} frustumCulled={false}>
+                  <meshBasicMaterial
+                    color={p.atmosphereColor}
+                    transparent
+                    opacity={0.28}
+                    depthWrite={false}
+                  />
+                </Sphere>
+              )}
 
-            {/* Exoplanet Orbital Energy Ring */}
-            {isExoplanet && p.hasRings && (
-              <mesh rotation={[Math.PI / 2.5, 0.4, 0]} frustumCulled={false}>
-                <ringGeometry args={[p.visualRadius * 1.25, p.visualRadius * 1.85, 48]} />
-                <meshBasicMaterial color="#a855f7" side={DoubleSide} transparent opacity={0.65} />
-              </mesh>
-            )}
+              {/* Exoplanet Orbital Energy Ring */}
+              {isExoplanet && p.hasRings && (
+                <mesh rotation={[Math.PI / 2.5, 0.4, 0]} frustumCulled={false}>
+                  <ringGeometry args={[p.visualRadius * 1.25, p.visualRadius * 1.85, 48]} />
+                  <meshBasicMaterial color="#a855f7" side={DoubleSide} transparent opacity={0.65} />
+                </mesh>
+              )}
+            </CosmicPlanetBody>
 
             {/* Long-Range Planetary Beacon & Camera-Facing HUD Identification */}
             <PlanetDistantBeacon planet={p} isExoplanet={isExoplanet} />
@@ -795,12 +874,22 @@ export function SpaceScene() {
         {/* Space Flight Cockpit Telemetry & Orbital Status HUD */}
         <group position={[0, -2.4, -6]}>
           <Text fontSize={0.34} color="#38bdf8" outlineWidth={0.04} outlineColor="#020617">
-            {`VELOCIDADE: ${telemetry.speed} km/h • ALVO: ${telemetry.target.toUpperCase()} (${telemetry.distKm} km)`}
+            {language === 'en'
+              ? `SPEED: ${telemetry.speed} km/h • TARGET: ${telemetry.target.toUpperCase()} (${telemetry.distKm} km)`
+              : `VELOCIDADE: ${telemetry.speed} km/h • ALVO: ${telemetry.target.toUpperCase()} (${telemetry.distKm} km)`}
           </Text>
           {stagingProgress < 1.0 ? (
             <group position={[0, -0.42, 0]}>
               <Text fontSize={0.22} color="#facc15" fontWeight="bold" outlineWidth={0.03} outlineColor="#020617">
-                {stagingProgress < 0.25
+                {language === 'en'
+                  ? stagingProgress < 0.25
+                    ? 'STAGE 1/4: PYROTECHNIC DECOUPLING & FAIRING JETTISON'
+                    : stagingProgress < 0.55
+                    ? 'STAGE 2/4: SECOND STAGE BOOSTER SEPARATION & RECOIL'
+                    : stagingProgress < 0.80
+                    ? 'STAGE 3/4: AUTOMATED SOLAR ARRAY & RCS DEPLOYMENT'
+                    : 'STAGE 4/4: ORBITAL CAPSULE ACTIVE • CONTROLS TRANSFERRED'
+                  : stagingProgress < 0.25
                   ? 'ETAPA 1/4: DESACOPLAMENTO PIROTÉCNICO E EJEÇÃO DAS COIFAS PROTETORAS'
                   : stagingProgress < 0.55
                   ? 'ETAPA 2/4: SEPARAÇÃO E RECUO DO 2º ESTÁGIO PROPULSOR (FOGUETE)'
@@ -809,12 +898,16 @@ export function SpaceScene() {
                   : 'ETAPA 4/4: CÁPSULA ORBITAL DE EXPLORAÇÃO ATIVA • COMANDOS TRANSFERIDOS'}
               </Text>
               <Text position={[0, -0.28, 0]} fontSize={0.16} color="#94a3b8" outlineWidth={0.02} outlineColor="#020617">
-                {`DESENCAPSULAMENTO EM CURSO: ${Math.round(stagingProgress * 100)}%`}
+                {language === 'en'
+                  ? `FAIRING SEPARATION IN PROGRESS: ${Math.round(stagingProgress * 100)}%`
+                  : `DESENCAPSULAMENTO EM CURSO: ${Math.round(stagingProgress * 100)}%`}
               </Text>
             </group>
           ) : (
             <Text position={[0, -0.42, 0]} fontSize={0.20} color="#4ade80" fontWeight="bold" outlineWidth={0.02} outlineColor="#020617">
-              CÁPSULA ORBITAL DE EXPLORAÇÃO ATIVA • SISTEMAS 100% NOMINAIS (GGPEN)
+              {language === 'en'
+                ? 'ORBITAL EXPLORATION CAPSULE ACTIVE • SYSTEMS 100% NOMINAL (GGPEN)'
+                : 'CÁPSULA ORBITAL DE EXPLORAÇÃO ATIVA • SISTEMAS 100% NOMINAIS (GGPEN)'}
             </Text>
           )}
         </group>

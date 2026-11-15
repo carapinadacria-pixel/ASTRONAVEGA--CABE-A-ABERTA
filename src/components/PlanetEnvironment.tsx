@@ -16,6 +16,7 @@ import { PlanetaryBaseModule } from './PlanetaryBaseModule';
 import { RealisticEarthGlobe } from './RealisticEarthGlobe';
 import { SaturnInteriorAtmosphere } from './RealisticCelestialBodies';
 import { HangarSuitTable, MoonFlagMissionProp, StoryCompanion, AnimatedMissionFloorArrows } from './StoryMissionProps';
+import { getPlanetName } from '../utils/i18n';
 
 // Procedural 360-degree Sky & Ocean Horizon Atmosphere Texture for Earth
 let cachedHorizonTexture: CanvasTexture | null = null;
@@ -291,6 +292,7 @@ function EarthBase() {
 // 2. MOON (LUA) - Fine Gray Regolith, Craters, Artemis Outpost, Earth in Sky
 // ===========================================================================
 function MoonEnvironment() {
+  const language = useGameStore((s) => s.language);
   return (
     <group>
       {/* Deep Space Black Sky with Horizon Stars */}
@@ -319,7 +321,7 @@ function MoonEnvironment() {
           fontWeight="bold"
           anchorX="center"
         >
-          PLANETA TERRA
+          {language === 'en' ? 'PLANET EARTH' : 'PLANETA TERRA'}
         </Text>
       </group>
 
@@ -372,7 +374,7 @@ function MoonEnvironment() {
       {/* Artemis / GGPEN Walkable Lunar Outpost with Automatic Metal Door, Tech & Refill Station */}
       <PlanetaryBaseModule
         planetId="moon"
-        baseTitle="BASE LUNAR ANGOLA • GGPEN ARTEMIS"
+        baseTitle={language === 'en' ? 'ANGOLA LUNAR BASE • GGPEN ARTEMIS' : 'BASE LUNAR ANGOLA • GGPEN ARTEMIS'}
         position={[24, 0, -24]}
         accentColor="#38bdf8"
         hullColor="#f1f5f9"
@@ -388,6 +390,7 @@ function MoonEnvironment() {
 // 3. MERCURY (MERCÚRIO) - Scorched Basalt, Giant Sun, Hermean Mining Post
 // ===========================================================================
 function MercuryEnvironment() {
+  const language = useGameStore((s) => s.language);
   return (
     <group>
       {/* Black Sky with Blinding Solar Corona */}
@@ -438,7 +441,7 @@ function MercuryEnvironment() {
       {/* Hermean Thermal-Shield Pressurized Outpost */}
       <PlanetaryBaseModule
         planetId="mercury"
-        baseTitle="POSTO SOLAR MERCÚRIO • GGPEN"
+        baseTitle={language === 'en' ? 'MERCURY SOLAR OUTPOST • GGPEN' : 'POSTO SOLAR MERCÚRIO • GGPEN'}
         position={[26, 0, 22]}
         accentColor="#fef08a"
         hullColor="#f59e0b"
@@ -453,6 +456,7 @@ function MercuryEnvironment() {
 // 4. VENUS (VÉNUS) - Sulfuric Amber Atmosphere, Basalt Crags, Venera Lander
 // ===========================================================================
 function VenusEnvironment() {
+  const language = useGameStore((s) => s.language);
   return (
     <group>
       {/* Dense Golden/Amber Atmospheric Sky Dome - NO BLUE VOID */}
@@ -505,7 +509,7 @@ function VenusEnvironment() {
       {/* Venera-GGPEN Heavy Atmospheric Pressure Outpost */}
       <PlanetaryBaseModule
         planetId="venus"
-        baseTitle="ESTAÇÃO PRESSURIZADA VÉNUS • GGPEN"
+        baseTitle={language === 'en' ? 'VENUS PRESSURIZED STATION • GGPEN' : 'ESTAÇÃO PRESSURIZADA VÉNUS • GGPEN'}
         position={[26, 0, -22]}
         accentColor="#fbbf24"
         hullColor="#78716c"
@@ -520,6 +524,7 @@ function VenusEnvironment() {
 // 5. MARS (MARTE) - Butterscotch Sky, Iron Oxide Red Dunes, Mars Base Alpha
 // ===========================================================================
 function MarsEnvironment() {
+  const language = useGameStore((s) => s.language);
   return (
     <group>
       {/* Rust-Red / Butterscotch Sky Dome */}
@@ -560,7 +565,7 @@ function MarsEnvironment() {
       {/* Mars Base Alpha: Walkable Tech Habitat + Neighboring Hydroponic Greenhouse & MOXIE Tower */}
       <PlanetaryBaseModule
         planetId="mars"
-        baseTitle="BASE MARTE ALPHA • GGPEN COLÓNIA"
+        baseTitle={language === 'en' ? 'MARS BASE ALPHA • GGPEN COLONY' : 'BASE MARTE ALPHA • GGPEN COLÓNIA'}
         position={[26, 0, -24]}
         accentColor="#38bdf8"
         hullColor="#f8fafc"
@@ -586,6 +591,7 @@ function MarsEnvironment() {
 // 6. TITAN (TITÃ) - Orange Methane Smog, Liquid Methane Lake, Cryo Base
 // ===========================================================================
 function TitanEnvironment() {
+  const language = useGameStore((s) => s.language);
   return (
     <group>
       {/* Dense Orange Smog Sky Dome */}
@@ -615,7 +621,7 @@ function TitanEnvironment() {
       {/* Dragonfly / Huygens Cryogenic Pressurized Exploration Base */}
       <PlanetaryBaseModule
         planetId="titan"
-        baseTitle="POSTO CRIOGÉNICO TITÃ • GGPEN HUYGENS"
+        baseTitle={language === 'en' ? 'TITAN CRYOGENIC OUTPOST • GGPEN HUYGENS' : 'POSTO CRIOGÉNICO TITÃ • GGPEN HUYGENS'}
         position={[24, 0, -24]}
         accentColor="#fbbf24"
         hullColor="#cbd5e1"
@@ -630,6 +636,8 @@ function TitanEnvironment() {
 // 7. GAS GIANTS (JÚPITER, SATURNO, ÚRANO, NEPTUNO) - Floating Aerostat Station
 // ===========================================================================
 function GasGiantStationEnvironment({ planet }: { planet: PlanetInfo }) {
+  const language = useGameStore((s) => s.language);
+  const planetLabel = getPlanetName(planet.id, planet.name, language).toUpperCase();
   const isSaturn = planet.type === 'saturn';
   const isUranus = planet.type === 'uranus';
   const isNeptune = planet.type === 'neptune';
@@ -695,7 +703,7 @@ function GasGiantStationEnvironment({ planet }: { planet: PlanetInfo }) {
 
       <PlanetaryBaseModule
         planetId={planet.id}
-        baseTitle={`ESTAÇÃO AEROESTÁTICA • ${planet.name.toUpperCase()}`}
+        baseTitle={`${language === 'en' ? 'AEROSTAT STATION' : 'ESTAÇÃO AEROESTÁTICA'} • ${planetLabel}`}
         position={[0, 0, -28]}
         accentColor="#38bdf8"
         hullColor="#e2e8f0"
@@ -704,7 +712,7 @@ function GasGiantStationEnvironment({ planet }: { planet: PlanetInfo }) {
       />
 
       <Text position={[0, 2.5, 25]} fontSize={1.4} color="#38bdf8" fontWeight="bold" anchorX="center">
-        {`ESTAÇÃO AEROESTÁTICA • ${planet.name.toUpperCase()} (GGPEN)`}
+        {`${language === 'en' ? 'AEROSTAT STATION' : 'ESTAÇÃO AEROESTÁTICA'} • ${planetLabel} (GGPEN)`}
       </Text>
     </group>
   );
@@ -714,6 +722,7 @@ function GasGiantStationEnvironment({ planet }: { planet: PlanetInfo }) {
 // 8. NASA CONFIRMED EXOPLANETS (TRAPPIST, KEPLER, PROXIMA, LHS)
 // ===========================================================================
 function ExoplanetEnvironment({ planet }: { planet: PlanetInfo }) {
+  const language = useGameStore((s) => s.language);
   const exoColor = planet.color || '#805ad5';
 
   return (
@@ -756,7 +765,7 @@ function ExoplanetEnvironment({ planet }: { planet: PlanetInfo }) {
       {/* Interstellar GGPEN Deep Space Outpost */}
       <PlanetaryBaseModule
         planetId={planet.id}
-        baseTitle={`EXPEDIÇÃO INTERESTELAR • ${planet.name.toUpperCase()}`}
+        baseTitle={`${language === 'en' ? 'INTERSTELLAR EXPEDITION' : 'EXPEDIÇÃO INTERESTELAR'} • ${planet.name.toUpperCase()}`}
         position={[24, 0, -22]}
         accentColor={exoColor}
         hullColor="#e2e8f0"

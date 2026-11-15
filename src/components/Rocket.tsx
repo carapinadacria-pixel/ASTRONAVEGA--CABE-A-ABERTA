@@ -26,6 +26,7 @@ export function Rocket() {
   const isNearRocket = useGameStore((state) => state.isNearRocket);
   const planetIndex = useGameStore((state) => state.planetIndex);
   const rocketFuel = useGameStore((state) => state.rocketFuel);
+  const language = useGameStore((state) => state.language);
   const currentPlanet = PLANETS[planetIndex] || PLANETS[0];
   const isEarth = currentPlanet.type === 'earth';
 
@@ -393,7 +394,7 @@ export function Rocket() {
         {isNearRocket && !isLaunching && (
           <group position={[0, 2.9, 3.8]}>
             <Text fontSize={0.3} color="#10b981" fontWeight="bold" anchorX="center" outlineWidth={0.04} outlineColor="#020617">
-              {'➔ [TECLA R ou ENCOSTAR] SUBIR NA CÁPSULA'}
+              {language === 'en' ? '➔ [KEY R or BUTTON] BOARD CAPSULE' : '➔ [TECLA R ou BOTÃO] ENTRAR NA CÁPSULA'}
             </Text>
           </group>
         )}
@@ -782,13 +783,21 @@ export function Rocket() {
             anchorX="center"
           >
             {rocketFuel <= 0
-              ? 'SEM COMBUSTÍVEL (0%) — ABASTECER NO PAINEL'
+              ? language === 'en'
+                ? 'NO FUEL (0%) — REFUEL ON PANEL'
+                : 'SEM COMBUSTÍVEL (0%) — ABASTECER NO PAINEL'
               : rocketFuel < 85
-              ? `COMBUSTÍVEL ${Math.round(rocketFuel)}% (RISCO DE QUEDA <85%)`
+              ? language === 'en'
+                ? `FUEL ${Math.round(rocketFuel)}% (CRASH RISK <85%)`
+                : `COMBUSTÍVEL ${Math.round(rocketFuel)}% (RISCO DE QUEDA <85%)`
+              : language === 'en'
+              ? `[KEY R] BOARD ROCKET • READY (${Math.round(rocketFuel)}%)`
               : `[TECLA R] SUBIR NO FOGUETE • PRONTO (${Math.round(rocketFuel)}%)`}
           </Text>
           <Text position={[0, -0.18, 0]} fontSize={0.16} color="#facc15" fontWeight="bold" anchorX="center">
-            {`PESO DO FOGUETE: ${Math.round(420 + rocketFuel * 25.5)} t • GGPEN PAD 39A`}
+            {language === 'en'
+              ? `ROCKET MASS: ${Math.round(420 + rocketFuel * 25.5)} t • GGPEN PAD 39A`
+              : `PESO DO FOGUETE: ${Math.round(420 + rocketFuel * 25.5)} t • GGPEN PAD 39A`}
           </Text>
         </group>
       )}

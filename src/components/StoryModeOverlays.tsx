@@ -813,16 +813,21 @@ export function StoryMissionHUD() {
   const isFlagPlantedOnMoon = useGameStore((s) => s.isFlagPlantedOnMoon);
   const showMissionCompleteBanner = useGameStore((s) => s.showMissionCompleteBanner);
   const dismissMissionCompleteBanner = useGameStore((s) => s.dismissMissionCompleteBanner);
+  const isControlsTutorialOpen = useGameStore((s) => s.isControlsTutorialOpen);
+  const isUiModalOpen = useGameStore((s) => s.isUiModalOpen);
   const language = useGameStore((s) => s.language);
   const t = UI_TEXT[language];
 
   const lastSpokenKeyRef = useRef<string | null>(null);
   const prevPlantedRef = useRef<boolean>(false);
 
-  // Trigger localized voice tip on every Story Mode stage transition (or language switch)
+  // Trigger localized voice tip on every Story Mode stage transition (wait until initial tutorial closes)
   useEffect(() => {
     if (appStage !== 'playing' || gameMode !== 'story') {
       lastSpokenKeyRef.current = null;
+      return;
+    }
+    if (isControlsTutorialOpen || isUiModalOpen) {
       return;
     }
     const speakKey = `${storyStep}-${language}`;
@@ -836,7 +841,7 @@ export function StoryMissionHUD() {
         return () => clearTimeout(timer);
       }
     }
-  }, [appStage, gameMode, storyStep, language]);
+  }, [appStage, gameMode, storyStep, language, isControlsTutorialOpen, isUiModalOpen]);
 
   // Play lunar anchor & mission victory chord once when the flag is planted
   useEffect(() => {
@@ -852,6 +857,7 @@ export function StoryMissionHUD() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'f' || e.key === 'F') {
         const st = useGameStore.getState();
+        if (st.isUiModalOpen || st.isControlsTutorialOpen) return;
         if (st.planetIndex === 0 && !st.hasSpacesuit && st.isNearSuitTable) {
           playSuitEquipSound();
           st.equipSpacesuitsAtTable();
@@ -868,11 +874,12 @@ export function StoryMissionHUD() {
 
   const currentObj = STORY_OBJECTIVES_I18N[language][storyStep];
   const hideBannerOnSpaceStaging = scene === 'space' && storyStep === 'autopilot_to_moon';
+  const hideOnMissionComplete = storyStep === 'mission_complete';
 
   return (
     <>
       {/* Mobile: Top-Left above Backpack/Joystick; Desktop: Top-Center */}
-      {!hideBannerOnSpaceStaging && currentObj && (
+      {!hideBannerOnSpaceStaging && !hideOnMissionComplete && currentObj && (
         <div className="fixed top-[74px] left-2.5 sm:top-[84px] sm:left-4 z-30 w-[calc(100vw-214px)] max-w-[260px] sm:max-w-sm lg:top-3 lg:left-1/2 lg:-translate-x-1/2 lg:w-[calc(100%-24px)] lg:max-w-md pointer-events-none select-none">
           <div className="pointer-events-auto bg-slate-950/90 border border-amber-400/50 rounded-2xl px-2.5 py-2 sm:px-3.5 sm:py-2.5 shadow-xl flex items-center justify-between gap-2 sm:gap-3">
             <div className="flex flex-col min-w-0">
